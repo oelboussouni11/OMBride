@@ -26,7 +26,7 @@ from schemas.ride import (
 )
 from services.fare import calculate_fare, get_active_fare_config, get_route_info
 from services.matching import run_matching, signal_driver_accepted
-from services.ws_manager import admin_manager, rider_manager
+from services.ws_manager import admin_manager, driver_manager, rider_manager
 
 router = APIRouter(prefix="/rides", tags=["rides"])
 
@@ -244,7 +244,7 @@ async def request_ride(
     await db.refresh(ride)
 
     # Trigger driver matching in background
-    background_tasks.add_task(run_matching, ride.id, body.pickup_lng, body.pickup_lat)
+    background_tasks.add_task(run_matching, ride.id, body.pickup_lng, body.pickup_lat, body.dropoff_lng, body.dropoff_lat)
 
     return RideResponse(
         id=ride.id,

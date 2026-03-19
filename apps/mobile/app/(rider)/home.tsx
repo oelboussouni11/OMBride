@@ -116,20 +116,11 @@ export default function RiderHomeScreen() {
         setRideState("matched");
         break;
       case "ride_status":
-        if (lastMessage.data.status === "arriving") {
-          setRideState("arriving");
-          Alert.alert("Driver arriving", "Your driver is at the pickup location.");
-        }
+        if (lastMessage.data.status === "arriving") setRideState("arriving");
         if (lastMessage.data.status === "in_progress") setRideState("in_progress");
-        if (lastMessage.data.status === "completed") {
-          setRideState("completed");
-        }
+        if (lastMessage.data.status === "completed") setRideState("completed");
         if (lastMessage.data.status === "cancelled") {
-          if (lastMessage.data.reason === "no_drivers_available") {
-            Alert.alert("No drivers available", "No drivers are nearby right now. Please try again in a few minutes.");
-          } else {
-            Alert.alert("Ride cancelled", "Your ride has been cancelled.");
-          }
+          // Reset first, toast handles notification
           resetRide();
         }
         break;

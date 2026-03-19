@@ -112,7 +112,11 @@ async def find_nearby_drivers(
     return list(result.scalars().all())
 
 
-async def offer_ride_to_driver(ride_id: UUID, driver: Driver, ride: Ride) -> bool:
+async def offer_ride_to_driver(
+    ride_id: UUID, driver: Driver, ride: Ride,
+    pickup_lng: float = 0, pickup_lat: float = 0,
+    dropoff_lng: float = 0, dropoff_lat: float = 0,
+) -> bool:
     """Send a ride offer to a driver via WebSocket and wait for acceptance."""
     event = asyncio.Event()
     key = str(ride_id)
@@ -126,6 +130,10 @@ async def offer_ride_to_driver(ride_id: UUID, driver: Driver, ride: Ride) -> boo
                 "ride_id": str(ride_id),
                 "pickup_address": ride.pickup_address,
                 "dropoff_address": ride.dropoff_address,
+                "pickup_lat": pickup_lat,
+                "pickup_lng": pickup_lng,
+                "dropoff_lat": dropoff_lat,
+                "dropoff_lng": dropoff_lng,
                 "fare": float(ride.fare) if ride.fare else None,
                 "distance_km": float(ride.distance_km) if ride.distance_km else None,
                 "duration_min": ride.duration_min,
@@ -161,7 +169,7 @@ def signal_driver_accepted(ride_id: UUID, driver_id: UUID) -> bool:
     return True
 
 
-async def run_matching(ride_id: UUID, pickup_lng: float, pickup_lat: float) -> None:
+async def run_matching(ride_id: UUID, pickup_lng: float, pickup_lat: float, dropoff_lng: float = 0, dropoff_lat: float = 0) -> None:
     """Background task: keep searching for drivers up to MAX_SEARCH_TIME seconds.
 
     - Searches for nearby drivers sorted by score then distance
@@ -214,7 +222,7 @@ async def run_matching(ride_id: UUID, pickup_lng: float, pickup_lat: float) -> N
                     if ride.status != RideStatus.requested:
                         return
 
-                    accepted = await offer_ride_to_driver(ride_id, driver, ride)
+                    accepted = await offer_ride_to_driver(ride_id, driver, ride, pickup_lng, pickup_lat, dropoff_lng, dropoff_lat)
                     if accepted:
                         return  # Done — driver accepted
 
