@@ -42,7 +42,7 @@ export function WebSocketProvider({ children }: PropsWithChildren) {
   function showToast(title: string, body: string) {
     setToast({ title, body });
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 6000);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
   }
 
   const connect = useCallback(() => {
@@ -66,7 +66,7 @@ export function WebSocketProvider({ children }: PropsWithChildren) {
           ws.send(JSON.stringify({ type: "pong" }));
           return;
         }
-        // Non-blocking toast for ride requests (driver on any tab)
+        // Toast for ride requests
         if (msg.type === "ride_request" && user?.role === "driver") {
           showToast(
             "New Ride Request",

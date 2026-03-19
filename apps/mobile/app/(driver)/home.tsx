@@ -22,6 +22,7 @@ export default function DriverHomeScreen() {
   const { user } = useAuth();
   const { lastMessage, sendMessage } = useWebSocket();
 
+
   const [driverState, setDriverState] = useState<DriverState>("offline");
   const [creditBalance, setCreditBalance] = useState<number>(0);
   const [driverStatus, setDriverStatus] = useState<string>("loading");

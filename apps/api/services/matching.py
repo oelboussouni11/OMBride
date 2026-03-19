@@ -169,6 +169,8 @@ def signal_driver_accepted(ride_id: UUID, driver_id: UUID) -> bool:
     return True
 
 
+_matching_disabled = False  # Set to True in tests to skip matching
+
 async def run_matching(ride_id: UUID, pickup_lng: float, pickup_lat: float, dropoff_lng: float = 0, dropoff_lat: float = 0) -> None:
     """Background task: keep searching for drivers up to MAX_SEARCH_TIME seconds.
 
@@ -177,6 +179,9 @@ async def run_matching(ride_id: UUID, pickup_lng: float, pickup_lat: float, drop
     - Sends periodic search updates to the rider
     - Only gives up after MAX_SEARCH_TIME seconds
     """
+    if _matching_disabled:
+        return
+
     key = str(ride_id)
     _tried_drivers[key] = set()
     start = time.monotonic()
