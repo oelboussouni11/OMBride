@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,15 +9,26 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { fetchCredits, fetchMe, requestTopup, type CreditTransaction } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
+
+const TIME_FILTERS = ["All", "Today", "This Week", "This Month"] as const;
+const TYPE_FILTERS = ["All", "Earned", "Commission", "Top-up"] as const;
+
+function isToday(d: Date) { return d.toDateString() === new Date().toDateString(); }
+function isThisWeek(d: Date) { return d >= new Date(Date.now() - 7 * 86400000); }
+function isThisMonth(d: Date) { const n = new Date(); return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }
 
 export default function EarningsScreen() {
   const [balance, setBalance] = useState(0);
   const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [timeFilter, setTimeFilter] = useState<typeof TIME_FILTERS[number]>("All");
+  const [typeFilter, setTypeFilter] = useState<typeof TYPE_FILTERS[number]>("All");
   const [showTopup, setShowTopup] = useState(false);
   const [topupAmount, setTopupAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
@@ -38,17 +49,28 @@ export default function EarningsScreen() {
     loadData();
   }, [loadData]);
 
+  const filtered = useMemo(() => {
+    return transactions.filter((t) => {
+      const d = new Date(t.created_at);
+      if (timeFilter === "Today" && !isToday(d)) return false;
+      if (timeFilter === "This Week" && !isThisWeek(d)) return false;
+      if (timeFilter === "This Month" && !isThisMonth(d)) return false;
+      if (typeFilter === "Earned" && t.type !== "ride_earned") return false;
+      if (typeFilter === "Commission" && t.type !== "ride_fee") return false;
+      if (typeFilter === "Top-up" && t.type !== "topup") return false;
+      return true;
+    });
+  }, [transactions, timeFilter, typeFilter]);
+
   const todayRides = transactions.filter(
-    (t) =>
-      t.type === "ride_earned" &&
-      new Date(t.created_at).toDateString() === new Date().toDateString()
+    (t) => t.type === "ride_earned" && isToday(new Date(t.created_at))
   ).length;
 
-  const totalEarned = transactions
+  const totalEarned = filtered
     .filter((t) => t.type === "ride_earned")
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const totalCommission = transactions
+  const totalCommission = filtered
     .filter((t) => t.type === "ride_fee")
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
@@ -121,16 +143,31 @@ export default function EarningsScreen() {
         </Pressable>
       </View>
 
-      {/* Transaction History */}
-      <Text style={styles.sectionTitle}>Transaction History</Text>
+      {/* Filters */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+        {TIME_FILTERS.map((f) => (
+          <Pressable key={f} style={[styles.filterChip, timeFilter === f && styles.filterChipActive]} onPress={() => setTimeFilter(f)}>
+            <Text style={[styles.filterChipText, timeFilter === f && styles.filterChipTextActive]}>{f}</Text>
+          </Pressable>
+        ))}
+        <View style={styles.filterDivider} />
+        {TYPE_FILTERS.map((f) => (
+          <Pressable key={f} style={[styles.filterChip, typeFilter === f && styles.filterChipActive]} onPress={() => setTypeFilter(f)}>
+            <Text style={[styles.filterChipText, typeFilter === f && styles.filterChipTextActive]}>{f}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
 
-      {transactions.length === 0 ? (
+      <Text style={styles.sectionTitle}>Transactions ({filtered.length})</Text>
+
+      {filtered.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No transactions yet</Text>
+          <Ionicons name="receipt-outline" size={24} color={colors.textMuted} />
+          <Text style={styles.emptyText}>{transactions.length === 0 ? "No transactions yet" : "No matches for this filter"}</Text>
         </View>
       ) : (
         <FlatList
-          data={transactions}
+          data={filtered}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingBottom: 24 }}
           renderItem={({ item }) => (
@@ -265,6 +302,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
   },
   topupButtonText: { color: colors.white, fontSize: 14, fontWeight: "600" },
+  filterScroll: { paddingHorizontal: spacing.md, marginBottom: spacing.md },
+  filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.full, backgroundColor: colors.surface, marginRight: spacing.sm },
+  filterChipActive: { backgroundColor: colors.primary },
+  filterChipText: { fontSize: 13, fontWeight: "600", color: colors.textSecondary },
+  filterChipTextActive: { color: colors.white },
+  filterDivider: { width: 1, height: 24, backgroundColor: colors.border, marginRight: spacing.sm, alignSelf: "center" },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
@@ -272,7 +315,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
-  emptyState: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyState: { flex: 1, justifyContent: "center", alignItems: "center", gap: spacing.sm },
   emptyText: { fontSize: 15, color: colors.textMuted },
   txnRow: {
     flexDirection: "row",
