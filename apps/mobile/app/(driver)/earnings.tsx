@@ -11,6 +11,7 @@ import {
   Modal,
   ScrollView,
   Image,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
@@ -77,37 +78,37 @@ export default function EarningsScreen() {
     .filter((t) => t.type === "ride_fee")
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
-  async function pickReceiptImage() {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission needed", "Photo library access is required.");
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        quality: 0.7,
-      });
-      if (!result.canceled && result.assets[0]) {
-        setReceiptImage(result.assets[0].uri);
-      }
-    } catch {
-      // Fallback for web — use file input
-      if (typeof document !== "undefined") {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = "image/*";
-        input.onchange = (e: any) => {
-          const file = e.target?.files?.[0];
-          if (file) {
-            const reader = new FileReader();
-            reader.onload = () => setReceiptImage(reader.result as string);
-            reader.readAsDataURL(file);
-          }
-        };
-        input.click();
-      }
+  function pickReceiptImage() {
+    // On web, use native file input (ImagePicker doesn't work well)
+    if (Platform.OS === "web" && typeof document !== "undefined") {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.onchange = (e: any) => {
+        const file = e.target?.files?.[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = () => setReceiptImage(reader.result as string);
+          reader.readAsDataURL(file);
+        }
+      };
+      input.click();
+      return;
     }
+    // Native: use ImagePicker
+    (async () => {
+      try {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Permission needed", "Photo library access is required.");
+          return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7 });
+        if (!result.canceled && result.assets[0]) {
+          setReceiptImage(result.assets[0].uri);
+        }
+      } catch {}
+    })();
   }
 
   async function handleTopup() {

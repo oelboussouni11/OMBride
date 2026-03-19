@@ -108,41 +108,52 @@ export default function DriverProfileScreen() {
   function handleSubmitVerification() {
     const allDocsUploaded = docs.every((d) => d.uri !== null);
     if (!allDocsUploaded) {
-      Alert.alert("Missing Documents", "Please upload all required photos.");
+      if (Platform.OS === "web") window.alert("Please upload all required photos.");
+      else Alert.alert("Missing Documents", "Please upload all required photos.");
       return;
     }
     if (!vehName.trim() || !vehPhone.trim()) {
-      Alert.alert("Missing Info", "Please fill in your full name and phone number.");
+      if (Platform.OS === "web") window.alert("Please fill in your full name and phone number.");
+      else Alert.alert("Missing Info", "Please fill in your full name and phone number.");
       return;
     }
-    Alert.alert(
-      "Submit for Verification?",
-      "Your documents and info will be reviewed. This info cannot be changed after verification.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Submit",
-          onPress: () => {
-            Alert.alert("Submitted", "Your verification request has been sent. You will be notified once reviewed.");
-            setVerificationOpen(false);
-          },
+    if (Platform.OS === "web") {
+      const ok = window.confirm("Your documents and info will be reviewed. This info cannot be changed after verification. Submit?");
+      if (ok) {
+        window.alert("Your verification request has been sent.");
+        setVerificationOpen(false);
+      }
+    } else {
+      Alert.alert(
+        "Submit for Verification?",
+        "Your documents and info will be reviewed. This info cannot be changed after verification.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Submit",
+            onPress: () => {
+              Alert.alert("Submitted", "Your verification request has been sent.");
+              setVerificationOpen(false);
+            },
         },
       ]
     );
   }
 
   function handleRequestInfoChange() {
-    Alert.alert(
-      "Request Info Change",
-      "To update your verified information (name, phone, vehicle), a request will be sent to the admin for review.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Send Request",
-          onPress: () => Alert.alert("Request Sent", "An admin will review your change request."),
-        },
-      ]
-    );
+    if (Platform.OS === "web") {
+      const ok = window.confirm("To update your verified information (name, phone, vehicle), a request will be sent to the admin. Continue?");
+      if (ok) window.alert("Request Sent. An admin will review your change request.");
+    } else {
+      Alert.alert(
+        "Request Info Change",
+        "To update your verified information, a request will be sent to the admin.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Send Request", onPress: () => Alert.alert("Request Sent", "An admin will review your change request.") },
+        ]
+      );
+    }
   }
 
   async function handleLogout() {
