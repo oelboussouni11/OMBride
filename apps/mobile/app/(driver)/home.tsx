@@ -304,8 +304,15 @@ export default function DriverHomeScreen() {
     return (
       <SafeAreaView style={s.container}>
         <View style={s.offlineTop}>
-          <Text style={s.greeting}>Hello, {user?.name?.split(" ")[0] || "Driver"}</Text>
-          <Text style={s.offlineStatus}>You are offline</Text>
+          <View style={s.greetingRow}>
+            <View>
+              <Text style={s.greeting}>Hello, {user?.name?.split(" ")[0] || "Driver"}</Text>
+              <Text style={s.offlineStatus}>You are offline</Text>
+            </View>
+            <View style={s.offlineAvatar}>
+              <Text style={s.offlineAvatarText}>{(user?.name || "D")[0].toUpperCase()}</Text>
+            </View>
+          </View>
         </View>
 
         <View style={s.offlineContent}>
@@ -324,7 +331,9 @@ export default function DriverHomeScreen() {
                 <Text style={s.balanceLabel}>Credit Balance</Text>
                 <Text style={s.balanceAmount}>{creditBalance.toFixed(2)} DH</Text>
               </View>
-              <Ionicons name="wallet" size={32} color="rgba(255,255,255,0.3)" />
+              <View style={s.balanceIconWrap}>
+                <Ionicons name="wallet" size={24} color="rgba(255,255,255,0.8)" />
+              </View>
             </View>
             {creditBalance < 5 && (
               <View style={s.lowCreditRow}>
@@ -332,6 +341,14 @@ export default function DriverHomeScreen() {
                 <Text style={s.lowCreditText}>Low credits — top up to accept rides</Text>
               </View>
             )}
+          </View>
+
+          {/* Quick stats */}
+          <View style={s.quickStats}>
+            <View style={s.quickStatItem}>
+              <Ionicons name="car-outline" size={20} color={colors.textSecondary} />
+              <Text style={s.quickStatLabel}>Ready to drive?</Text>
+            </View>
           </View>
 
           <TouchableOpacity style={s.goOnlineBtn} onPress={goOnline} activeOpacity={0.7}>
@@ -356,16 +373,21 @@ export default function DriverHomeScreen() {
           <Text style={s.onlineSub}>Waiting for ride requests</Text>
         </View>
         <View style={s.onlineContent}>
-          <View style={s.onlineStatsRow}>
-            <View style={s.onlineStat}>
-              <Ionicons name="wallet-outline" size={20} color={colors.textSecondary} />
-              <Text style={s.onlineStatValue}>{creditBalance.toFixed(2)} DH</Text>
-              <Text style={s.onlineStatLabel}>Credits</Text>
+          <View style={s.onlineStatsGrid}>
+            <View style={s.onlineStatCard}>
+              <Ionicons name="wallet-outline" size={22} color={colors.primary} />
+              <Text style={s.onlineStatValue}>{creditBalance.toFixed(2)}</Text>
+              <Text style={s.onlineStatLabel}>Credits (DH)</Text>
+            </View>
+            <View style={s.onlineStatCard}>
+              <Ionicons name="shield-checkmark-outline" size={22} color={colors.success} />
+              <Text style={s.onlineStatValue}>{driverStatus}</Text>
+              <Text style={s.onlineStatLabel}>Status</Text>
             </View>
           </View>
           <TouchableOpacity style={s.goOfflineBtn} onPress={goOffline} activeOpacity={0.7}>
-            <Ionicons name="power" size={18} color={colors.textSecondary} />
-            <Text style={s.goOfflineBtnText}>Go Offline</Text>
+            <Ionicons name="power" size={18} color={colors.danger} />
+            <Text style={[s.goOfflineBtnText, { color: colors.danger }]}>Go Offline</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -617,8 +639,14 @@ const s = StyleSheet.create({
 
   // Offline
   offlineTop: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl },
-  greeting: { fontSize: 28, fontWeight: "800", color: colors.text },
+  greetingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  greeting: { fontSize: 26, fontWeight: "800", color: colors.text },
   offlineStatus: { fontSize: 15, color: colors.textMuted, marginTop: 2 },
+  offlineAvatar: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: colors.surface, justifyContent: "center", alignItems: "center",
+  },
+  offlineAvatarText: { fontSize: 20, fontWeight: "700", color: colors.text },
   offlineContent: { flex: 1, padding: spacing.lg, justifyContent: "center" },
   alertCard: {
     flexDirection: "row", alignItems: "center", gap: spacing.sm,
@@ -630,6 +658,10 @@ const s = StyleSheet.create({
   },
   balanceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   balanceLabel: { fontSize: 13, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: 0.5 },
+  balanceIconWrap: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center",
+  },
   balanceAmount: { fontSize: 36, fontWeight: "800", color: colors.white, marginTop: spacing.xs },
   lowCreditRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.sm },
   lowCreditText: { fontSize: 12, color: "#fbbf24" },
@@ -638,6 +670,12 @@ const s = StyleSheet.create({
     paddingVertical: 18, alignItems: "center", justifyContent: "center", gap: spacing.sm,
   },
   goOnlineBtnText: { color: colors.white, fontSize: 18, fontWeight: "700" },
+  quickStats: {
+    backgroundColor: colors.surface, borderRadius: radius.md,
+    padding: spacing.md, marginBottom: spacing.md, alignItems: "center",
+  },
+  quickStatItem: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  quickStatLabel: { fontSize: 15, color: colors.textSecondary, fontWeight: "500" },
   btnDisabled: { opacity: 0.4 },
 
   // Online
@@ -648,10 +686,13 @@ const s = StyleSheet.create({
   onlineTitle: { fontSize: 24, fontWeight: "700", color: colors.text },
   onlineSub: { fontSize: 15, color: colors.textMuted, marginTop: spacing.xs },
   onlineContent: { padding: spacing.lg },
-  onlineStatsRow: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md },
-  onlineStat: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  onlineStatsGrid: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
+  onlineStatCard: {
+    flex: 1, backgroundColor: colors.surface, borderRadius: radius.md,
+    padding: spacing.md, alignItems: "center", gap: spacing.xs,
+  },
   onlineStatValue: { fontSize: 18, fontWeight: "700", color: colors.text },
-  onlineStatLabel: { fontSize: 13, color: colors.textMuted },
+  onlineStatLabel: { fontSize: 11, color: colors.textMuted },
   goOfflineBtn: {
     flexDirection: "row", borderWidth: 2, borderColor: colors.border, borderRadius: radius.md,
     paddingVertical: 14, alignItems: "center", justifyContent: "center", gap: spacing.sm,
