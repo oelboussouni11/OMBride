@@ -237,6 +237,10 @@ export function submitVerification(data: VerificationData) {
 
 // ── Account ────────────────────────────────────────────────────────────────
 
+export function switchRole() {
+  return apiFetch<{ role: string; user: any }>("/auth/me/switch-role", { method: "POST" });
+}
+
 export function deleteAccount() {
   return apiFetch<{ message: string }>("/auth/me", { method: "DELETE" });
 }

@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, TextInput, Alert } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, TextInput, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAuth } from "../../context/AuthContext";
-import { fetchStats, type UserStats } from "../../services/api";
+import { fetchStats, switchRole, deleteAccount, type UserStats } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
 
 function StarRow({ rating }: { rating: number }) {
@@ -41,8 +41,38 @@ export default function RiderProfileScreen() {
     router.replace("/(auth)/login");
   }
 
-  function handleSwitchToDriver() {
-    router.replace("/(driver)/home");
+  async function handleSwitchToDriver() {
+    try {
+      await switchRole();
+      router.replace("/(driver)/home");
+    } catch (err: any) {
+      if (Platform.OS === "web") window.alert(err.message || "Failed to switch");
+      else Alert.alert("Error", err.message);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    const msg = "This will permanently deactivate your account. You won't be able to log in. Continue?";
+    let confirmed = false;
+    if (Platform.OS === "web") {
+      confirmed = window.confirm(msg);
+    } else {
+      confirmed = await new Promise<boolean>((resolve) => {
+        Alert.alert("Delete Account?", msg, [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          { text: "Delete", style: "destructive", onPress: () => resolve(true) },
+        ]);
+      });
+    }
+    if (!confirmed) return;
+    try {
+      await deleteAccount();
+      await logout();
+      router.replace("/(auth)/login");
+    } catch (err: any) {
+      if (Platform.OS === "web") window.alert(err.message || "Failed");
+      else Alert.alert("Error", err.message);
+    }
   }
 
   function handleSaveProfile() {
@@ -157,6 +187,11 @@ export default function RiderProfileScreen() {
           <Text style={styles.logoutText}>Sign Out</Text>
         </Pressable>
 
+        <Pressable style={styles.deleteButton} onPress={handleDeleteAccount}>
+          <Ionicons name="trash-outline" size={16} color={colors.danger} />
+          <Text style={styles.deleteText}>Delete Account</Text>
+        </Pressable>
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
@@ -265,4 +300,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   logoutText: { color: colors.white, fontSize: 16, fontWeight: "600" },
+  deleteButton: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: spacing.sm, paddingVertical: 14, marginTop: spacing.md,
+  },
+  deleteText: { color: colors.danger, fontSize: 14, fontWeight: "500" },
 });

@@ -18,7 +18,7 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAuth } from "../../context/AuthContext";
-import { fetchMe, fetchStats, requestReverification, type UserStats } from "../../services/api";
+import { fetchMe, fetchStats, requestReverification, switchRole, deleteAccount, type UserStats } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -381,13 +381,27 @@ export default function DriverProfileScreen() {
         </View>
 
         {/* Actions */}
-        <Pressable style={styles.actionButton} onPress={() => router.replace("/(rider)/home")}>
+        <Pressable style={styles.actionButton} onPress={async () => {
+          try { await switchRole(); router.replace("/(rider)/home"); }
+          catch (e: any) { if (Platform.OS === "web") window.alert(e.message); else Alert.alert("Error", e.message); }
+        }}>
           <Ionicons name="swap-horizontal-outline" size={18} color={colors.text} />
           <Text style={styles.actionText}>Switch to Rider Mode</Text>
         </Pressable>
         <Pressable style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color={colors.white} />
           <Text style={styles.logoutText}>Sign Out</Text>
+        </Pressable>
+        <Pressable style={styles.deleteAccountBtn} onPress={async () => {
+          const msg = "This will permanently deactivate your account. Continue?";
+          let ok = Platform.OS === "web" ? window.confirm(msg) : await new Promise<boolean>((r) =>
+            Alert.alert("Delete Account?", msg, [{ text: "Cancel", onPress: () => r(false) }, { text: "Delete", style: "destructive", onPress: () => r(true) }]));
+          if (!ok) return;
+          try { await deleteAccount(); await logout(); router.replace("/(auth)/login"); }
+          catch (e: any) { if (Platform.OS === "web") window.alert(e.message); else Alert.alert("Error", e.message); }
+        }}>
+          <Ionicons name="trash-outline" size={16} color={colors.danger} />
+          <Text style={styles.deleteAccountText}>Delete Account</Text>
         </Pressable>
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -511,4 +525,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: "center", justifyContent: "center", gap: spacing.sm,
   },
   logoutText: { color: colors.white, fontSize: 16, fontWeight: "600" },
+  deleteAccountBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, paddingVertical: 14, marginTop: spacing.md },
+  deleteAccountText: { color: colors.danger, fontSize: 14, fontWeight: "500" },
 });

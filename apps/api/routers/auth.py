@@ -115,15 +115,16 @@ async def register(
     db.add(user)
     await db.flush()  # get user.id
 
-    # Create role-specific record
-    if body.role == UserRole.rider:
-        rider = Rider(user_id=user.id)
-        db.add(rider)
-    elif body.role == UserRole.driver:
+    # Always create a rider record (everyone can ride)
+    rider = Rider(user_id=user.id)
+    db.add(rider)
+
+    # Also create driver record if registering as driver
+    if body.role == UserRole.driver:
         driver = Driver(
             user_id=user.id,
-            vehicle_model=body.vehicle_model,
-            plate_number=body.plate_number,
+            vehicle_model=body.vehicle_model or "Not set",
+            plate_number=body.plate_number or f"TEMP-{str(user.id)[:8]}",
         )
         db.add(driver)
 
@@ -220,6 +221,48 @@ async def refresh(
     await store_refresh_token(redis, user.id, new_refresh)
 
     return TokenResponse(access_token=new_access, refresh_token=new_refresh)
+
+
+@router.post("/me/switch-role")
+async def switch_role(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Switch between rider and driver mode. Creates driver record if needed."""
+    if user.role == UserRole.rider:
+        # Switch to driver
+        if user.driver is None:
+            # Create driver record with placeholder info (will fill in verification)
+            driver = Driver(
+                user_id=user.id,
+                vehicle_model="Not set",
+                plate_number=f"TEMP-{str(user.id)[:8]}",
+            )
+            db.add(driver)
+        user.role = UserRole.driver
+    elif user.role == UserRole.driver:
+        # Switch to rider — rider record should already exist
+        if user.rider is None:
+            rider = Rider(user_id=user.id)
+            db.add(rider)
+        user.role = UserRole.rider
+    else:
+        raise HTTPException(status_code=400, detail="Admins cannot switch roles")
+
+    await db.commit()
+
+    # Re-fetch with relationships
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.driver), selectinload(User.rider))
+        .where(User.id == user.id)
+    )
+    user = result.scalar_one()
+
+    return {
+        "role": user.role.value,
+        "user": _build_user_response(user),
+    }
 
 
 @router.delete("/me")
