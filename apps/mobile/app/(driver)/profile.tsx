@@ -135,9 +135,10 @@ export default function DriverProfileScreen() {
               Alert.alert("Submitted", "Your verification request has been sent.");
               setVerificationOpen(false);
             },
-        },
-      ]
-    );
+          },
+        ]
+      );
+    }
   }
 
   function handleRequestInfoChange() {
