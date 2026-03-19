@@ -18,7 +18,7 @@ import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAuth } from "../../context/AuthContext";
-import { fetchMe, fetchStats, type UserStats } from "../../services/api";
+import { fetchMe, fetchStats, requestReverification, type UserStats } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -141,19 +141,30 @@ export default function DriverProfileScreen() {
     }
   }
 
-  function handleRequestInfoChange() {
+  async function handleRequestInfoChange() {
+    const msg = "This will reset your verification. You will need to re-upload all documents and get re-verified. You cannot accept rides until verified again. Continue?";
+    let confirmed = false;
     if (Platform.OS === "web") {
-      const ok = window.confirm("To update your verified information (name, phone, vehicle), a request will be sent to the admin. Continue?");
-      if (ok) window.alert("Request Sent. An admin will review your change request.");
+      confirmed = window.confirm(msg);
     } else {
-      Alert.alert(
-        "Request Info Change",
-        "To update your verified information, a request will be sent to the admin.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Send Request", onPress: () => Alert.alert("Request Sent", "An admin will review your change request.") },
-        ]
-      );
+      confirmed = await new Promise<boolean>((resolve) => {
+        Alert.alert("Re-verify Account?", msg, [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          { text: "Yes, Re-verify", style: "destructive", onPress: () => resolve(true) },
+        ]);
+      });
+    }
+    if (!confirmed) return;
+    try {
+      await requestReverification();
+      // Reset local state to show verification form
+      setDriverInfo((prev: any) => prev ? { ...prev, status: "pending" } : prev);
+      setVerificationOpen(true);
+      if (Platform.OS === "web") window.alert("Verification reset. Please re-upload your documents.");
+      else Alert.alert("Reset", "Your verification has been reset. Please re-upload documents.");
+    } catch (err: any) {
+      if (Platform.OS === "web") window.alert(err.message || "Failed to reset verification");
+      else Alert.alert("Error", err.message || "Failed to reset verification");
     }
   }
 

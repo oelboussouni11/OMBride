@@ -204,6 +204,14 @@ export function fetchStats() {
   return apiFetch<UserStats>("/auth/me/stats");
 }
 
+// ── Driver ─────────────────────────────────────────────────────────────────
+
+export function requestReverification() {
+  return apiFetch<{ status: string; message: string }>("/drivers/request-reverification", {
+    method: "POST",
+  });
+}
+
 // ── User ───────────────────────────────────────────────────────────────────
 
 export function fetchMe() {

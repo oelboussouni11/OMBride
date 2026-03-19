@@ -8,10 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from database import get_db
-from dependencies import require_admin
+from dependencies import get_current_user, require_admin
 from models.credit import CreditTransaction, CreditType
 from models.ride import Ride
-from models.user import Driver, DriverDocument, DriverStatus, User
+from models.user import Driver, DriverDocument, DriverStatus, User, UserRole
 from schemas.admin import (
     CreditTopupRequest,
     CreditTransactionResponse,
@@ -23,6 +23,26 @@ from schemas.admin import (
 )
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
+
+
+@router.post("/request-reverification")
+async def request_reverification(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Driver requests to re-verify (resets status to pending, unlocks info for editing)."""
+    if user.role != UserRole.driver or user.driver is None:
+        raise HTTPException(status_code=403, detail="Only drivers can request re-verification")
+
+    driver = user.driver
+    if driver.status != DriverStatus.verified:
+        raise HTTPException(status_code=400, detail="Only verified drivers can request re-verification")
+
+    driver.status = DriverStatus.pending
+    driver.is_available = False
+    await db.commit()
+
+    return {"status": "pending", "message": "Your verification has been reset. Please re-upload documents and submit for review."}
 
 
 @router.get("/", response_model=list[DriverListItem])
