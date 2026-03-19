@@ -422,44 +422,49 @@ export default function RiderHomeScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.mapPlaceholder}>
+          <Ionicons name="location" size={32} color={colors.primary} />
           <Text style={styles.mapText}>
             {locationGranted
               ? `${pickup?.latitude.toFixed(4) ?? "..."}, ${pickup?.longitude.toFixed(4) ?? "..."}`
               : "Waiting for location..."}
           </Text>
+          {pickup?.address && <Text style={styles.mapSubtext}>{pickup.address}</Text>}
         </View>
         <View style={styles.bottomSheet}>
           <Pressable
             style={styles.whereToButton}
             onPress={() => setRideState("entering_destination")}
           >
-            <Text style={styles.whereToIcon}>→</Text>
+            <Ionicons name="search-outline" size={20} color={colors.textSecondary} />
             <Text style={styles.whereToText}>Where to?</Text>
+            <Ionicons name="arrow-forward" size={18} color={colors.textMuted} />
           </Pressable>
 
           {savedLocations.length > 0 && (
             <View style={styles.savedSection}>
               <Text style={styles.savedTitle}>Saved Places</Text>
-              {savedLocations.map((loc) => (
-                <Pressable
-                  key={loc.label}
-                  style={styles.savedItem}
-                  onPress={() => selectSavedLocation(loc)}
-                  onLongPress={() => handleDeleteSavedLocation(loc.label)}
-                >
-                  <View style={styles.savedIcon}>
-                    <Text style={styles.savedIconText}>
-                      {loc.label.toLowerCase() === "home" ? "H" :
-                       loc.label.toLowerCase() === "work" ? "W" :
-                       loc.label[0].toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.savedLabel}>{loc.label}</Text>
-                    <Text style={styles.savedAddress} numberOfLines={1}>{loc.address}</Text>
-                  </View>
-                </Pressable>
-              ))}
+              {savedLocations.map((loc) => {
+                const iconName = loc.label.toLowerCase() === "home" ? "home-outline" as const
+                  : loc.label.toLowerCase() === "work" ? "briefcase-outline" as const
+                  : "location-outline" as const;
+                return (
+                  <Pressable
+                    key={loc.label}
+                    style={styles.savedItem}
+                    onPress={() => selectSavedLocation(loc)}
+                    onLongPress={() => handleDeleteSavedLocation(loc.label)}
+                  >
+                    <View style={styles.savedIcon}>
+                      <Ionicons name={iconName} size={18} color={colors.text} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.savedLabel}>{loc.label}</Text>
+                      <Text style={styles.savedAddress} numberOfLines={1}>{loc.address}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  </Pressable>
+                );
+              })}
             </View>
           )}
         </View>
@@ -537,24 +542,29 @@ export default function RiderHomeScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.mapPlaceholder}>
+          <Ionicons name="navigate" size={28} color={colors.primary} />
           <Text style={styles.mapText}>
             {pickup?.address} → {dropoff?.address}
           </Text>
         </View>
         <View style={styles.bottomSheet}>
-          <Text style={styles.sheetTitle}>Ride Estimate</Text>
+          <Text style={styles.sheetTitle}>Trip Summary</Text>
+          {/* Fare highlight */}
+          <View style={styles.fareHighlight}>
+            <Text style={styles.fareHighlightAmount}>{estimate.estimated_fare} DH</Text>
+            <Text style={styles.fareHighlightLabel}>Estimated fare</Text>
+          </View>
           <View style={styles.estimateRow}>
             <View style={styles.estimateItem}>
+              <Ionicons name="speedometer-outline" size={18} color={colors.textSecondary} />
               <Text style={styles.estimateValue}>{estimate.distance_km} km</Text>
               <Text style={styles.estimateLabel}>Distance</Text>
             </View>
+            <View style={styles.estimateDivider} />
             <View style={styles.estimateItem}>
+              <Ionicons name="time-outline" size={18} color={colors.textSecondary} />
               <Text style={styles.estimateValue}>{estimate.duration_min} min</Text>
               <Text style={styles.estimateLabel}>Duration</Text>
-            </View>
-            <View style={styles.estimateItem}>
-              <Text style={styles.estimateValue}>{estimate.estimated_fare} DH</Text>
-              <Text style={styles.estimateLabel}>Fare</Text>
             </View>
           </View>
           <Pressable style={styles.primaryButton} onPress={handleRequestRide} disabled={loading}>
@@ -577,16 +587,28 @@ export default function RiderHomeScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.searchingTitle}>Finding your driver...</Text>
+          <View style={styles.searchingPulse}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+          <Text style={styles.searchingTitle}>Finding your driver</Text>
           <Text style={styles.searchingSubtext}>
-            Searching... {searchSeconds}s
+            Looking for nearby drivers... {searchSeconds}s
           </Text>
           <View style={styles.progressBarContainer}>
             <View style={[styles.progressBar, { width: `${Math.min((searchSeconds / SEARCH_TIMEOUT) * 100, 100)}%` }]} />
           </View>
-          <Pressable style={[styles.dangerButton, { marginTop: 32, width: "80%" }]} onPress={handleCancel}>
-            <Text style={styles.dangerButtonText}>Cancel</Text>
+          <View style={styles.searchingRoute}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+              <View style={[styles.routeDot, { backgroundColor: colors.success }]} />
+              <Text style={{ fontSize: 13, color: colors.textSecondary }} numberOfLines={1}>{pickup?.address || "Pickup"}</Text>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.xs }}>
+              <View style={[styles.routeDot, { backgroundColor: colors.danger }]} />
+              <Text style={{ fontSize: 13, color: colors.textSecondary }} numberOfLines={1}>{dropoff?.address || "Destination"}</Text>
+            </View>
+          </View>
+          <Pressable style={[styles.dangerButton, { width: "80%" }]} onPress={handleCancel}>
+            <Text style={styles.dangerButtonText}>Cancel Request</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -776,7 +798,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  mapText: { fontSize: 14, color: colors.textSecondary },
+  mapText: { fontSize: 14, color: colors.textSecondary, marginTop: spacing.sm },
+  mapSubtext: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   bottomSheet: {
     backgroundColor: colors.white,
     borderTopLeftRadius: radius.lg,
@@ -793,11 +816,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.surface,
     borderRadius: radius.md,
-    padding: spacing.md,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
     gap: spacing.sm,
   },
-  whereToIcon: { fontSize: 18 },
-  whereToText: { fontSize: 18, fontWeight: "600", color: colors.textSecondary },
+  whereToText: { flex: 1, fontSize: 17, fontWeight: "600", color: colors.textSecondary },
   sheetTitle: {
     fontSize: 20,
     fontWeight: "700",
@@ -907,14 +930,26 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   dangerButtonText: { color: colors.white, fontSize: 16, fontWeight: "600" },
+  fareHighlight: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  fareHighlightAmount: { fontSize: 32, fontWeight: "800", color: colors.white },
+  fareHighlightLabel: { fontSize: 13, color: "rgba(255,255,255,0.6)", marginTop: 2 },
   estimateRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
     marginBottom: spacing.lg,
   },
-  estimateItem: { alignItems: "center", flex: 1 },
-  estimateValue: { fontSize: 20, fontWeight: "700", color: colors.text },
-  estimateLabel: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  estimateItem: { alignItems: "center", flex: 1, gap: 4 },
+  estimateDivider: { width: 1, backgroundColor: colors.border },
+  estimateValue: { fontSize: 18, fontWeight: "700", color: colors.text },
+  estimateLabel: { fontSize: 12, color: colors.textMuted },
   centerContent: {
     flex: 1,
     justifyContent: "center",
@@ -927,7 +962,24 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginTop: spacing.lg,
   },
+  searchingPulse: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.surface,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: spacing.lg,
+  },
   searchingSubtext: { fontSize: 14, color: colors.textMuted, marginTop: spacing.xs },
+  searchingRoute: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    width: "80%",
+    marginTop: spacing.lg,
+    marginBottom: spacing.lg,
+  },
   progressBarContainer: {
     width: "80%",
     height: 4,
@@ -1090,15 +1142,10 @@ const styles = StyleSheet.create({
   savedIcon: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 12,
     backgroundColor: colors.surface,
     justifyContent: "center",
     alignItems: "center",
-  },
-  savedIconText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.text,
   },
   savedLabel: {
     fontSize: 16,

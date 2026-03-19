@@ -7,7 +7,7 @@ export const colors = {
   text: "#18181b",
   textSecondary: "#71717a",
   textMuted: "#a1a1aa",
-  accent: "#18181b",
+  accent: "#3b82f6",
   danger: "#ef4444",
   success: "#22c55e",
   warning: "#f59e0b",
@@ -26,5 +26,6 @@ export const radius = {
   sm: 8,
   md: 12,
   lg: 16,
+  xl: 20,
   full: 9999,
 };
