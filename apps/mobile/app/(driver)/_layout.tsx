@@ -32,7 +32,10 @@ export default function DriverLayout() {
       />
       <Tabs.Screen
         name="documents"
-        options={{ href: null }}
+        options={{
+          title: "Verify",
+          tabBarIcon: ({ color, size }) => <Ionicons name="shield-checkmark-outline" size={size} color={color} />,
+        }}
       />
       <Tabs.Screen
         name="profile"
