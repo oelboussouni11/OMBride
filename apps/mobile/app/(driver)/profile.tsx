@@ -14,7 +14,7 @@ import {
   UIManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useNavigation } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAuth } from "../../context/AuthContext";
@@ -58,6 +58,7 @@ function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
 export default function DriverProfileScreen() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const navigation = useNavigation<any>();
   const [driverInfo, setDriverInfo] = useState<any>(null);
   const [stats, setStats] = useState<UserStats>({});
   const [docs, setDocs] = useState<DocItem[]>(verificationDocs);
@@ -237,86 +238,27 @@ export default function DriverProfileScreen() {
           </View>
         </View>
 
-        {/* Verification Dropdown */}
-        <Pressable style={styles.dropdownHeader} onPress={toggleVerification}>
-          <View style={styles.dropdownLeft}>
-            <Ionicons name="shield-checkmark-outline" size={20} color={verificationColor} />
-            <Text style={styles.dropdownTitle}>Verification</Text>
-            <View style={[styles.badge, { backgroundColor: verificationBg }]}>
-              <Text style={[styles.badgeText, { color: verificationColor }]}>
-                {driverInfo?.status?.toUpperCase() || "PENDING"}
-              </Text>
-            </View>
-          </View>
-          <Ionicons name={verificationOpen ? "chevron-up" : "chevron-down"} size={20} color={colors.textMuted} />
-        </Pressable>
-
-        {verificationOpen && (
-          <View style={styles.dropdownContent}>
-            {isVerified ? (
-              <Text style={styles.dropdownNote}>
-                Your account is verified. Documents and info are locked.
-              </Text>
-            ) : (
-              <>
-                <Text style={styles.dropdownNote}>
-                  Upload all required documents and fill in your info to get verified.
-                  {"\n"}Progress: {uploadedCount}/{docs.length} documents
+        {/* Verification Status */}
+        {driverInfo && (
+          <View style={[styles.verifyBanner, { borderColor: verificationColor }]}>
+            <View style={styles.verifyBannerRow}>
+              <Ionicons name={isVerified ? "shield-checkmark" : "shield-outline"} size={20} color={verificationColor} />
+              <View style={[styles.badge, { backgroundColor: verificationBg }]}>
+                <Text style={[styles.badgeText, { color: verificationColor }]}>
+                  {driverInfo.status?.toUpperCase() || "PENDING"}
                 </Text>
-
-                {/* Progress bar */}
-                <View style={styles.progressWrap}>
-                  <View style={[styles.progressFill, { width: `${(uploadedCount / docs.length) * 100}%` }]} />
-                </View>
-
-                {/* Document uploads */}
-                {docs.map((doc, i) => (
-                  <Pressable key={doc.type} style={styles.docItem} onPress={() => pickImage(i)}>
-                    <View style={[styles.docIcon, doc.uri ? styles.docIconDone : {}]}>
-                      <Ionicons name={doc.uri ? "checkmark" : doc.icon} size={18} color={doc.uri ? colors.white : colors.textSecondary} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.docLabel}>{doc.label}</Text>
-                      <Text style={{ fontSize: 11, color: doc.uri ? colors.success : colors.textMuted }}>
-                        {doc.uri ? "Uploaded" : "Tap to upload"}
-                      </Text>
-                    </View>
-                    {doc.uri ? (
-                      <Image source={{ uri: doc.uri }} style={styles.docThumb} />
-                    ) : (
-                      <Ionicons name="add-circle-outline" size={24} color={colors.textMuted} />
-                    )}
-                  </Pressable>
-                ))}
-
-                {/* Name & Phone for verification */}
-                <View style={styles.verifyFieldGroup}>
-                  <Text style={styles.verifyFieldLabel}>Full Name (as on licence)</Text>
-                  <TextInput
-                    style={styles.verifyInput}
-                    value={vehName}
-                    onChangeText={setVehName}
-                    placeholder="Your full name"
-                    placeholderTextColor={colors.textMuted}
-                  />
-                </View>
-                <View style={styles.verifyFieldGroup}>
-                  <Text style={styles.verifyFieldLabel}>Phone Number</Text>
-                  <TextInput
-                    style={styles.verifyInput}
-                    value={vehPhone}
-                    onChangeText={setVehPhone}
-                    placeholder="Your phone number"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="phone-pad"
-                  />
-                </View>
-
-                <Pressable style={styles.submitVerifyBtn} onPress={handleSubmitVerification}>
-                  <Ionicons name="shield-checkmark-outline" size={18} color={colors.white} />
-                  <Text style={styles.submitVerifyText}>Submit for Verification</Text>
-                </Pressable>
-              </>
+              </View>
+            </View>
+            <Text style={styles.verifyBannerText}>
+              {isVerified ? "Your account is verified."
+                : driverInfo.status === "rejected" ? `Rejected: ${driverInfo.rejection_note || "See verification tab"}`
+                : "Complete verification to start driving."}
+            </Text>
+            {!isVerified && (
+              <Pressable style={styles.verifyLink} onPress={() => navigation.navigate("documents" as never)}>
+                <Text style={styles.verifyLinkText}>Go to Verification</Text>
+                <Ionicons name="arrow-forward" size={14} color={colors.primary} />
+              </Pressable>
             )}
           </View>
         )}
@@ -453,6 +395,11 @@ const styles = StyleSheet.create({
   dropdownTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
   badge: { borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 2 },
   badgeText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  verifyBanner: { borderWidth: 2, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md },
+  verifyBannerRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.xs },
+  verifyBannerText: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
+  verifyLink: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: spacing.sm },
+  verifyLinkText: { fontSize: 14, fontWeight: "600", color: colors.primary },
   dropdownContent: {
     backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border,
     borderTopWidth: 0, borderBottomLeftRadius: radius.md, borderBottomRightRadius: radius.md,

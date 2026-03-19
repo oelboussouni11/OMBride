@@ -51,6 +51,7 @@ class DriverListItem(BaseModel):
     vehicle_model: str
     plate_number: str
     status: DriverStatus
+    account_status: str = "active"
     credit_balance: float
     is_available: bool
     created_at: datetime
