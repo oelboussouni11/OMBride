@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { useNavigation } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
 import { useWebSocket } from "../../context/WebSocketContext";
 import { acceptRide, arrivingRide, startRide, completeRide, cancelRide, fetchMe, rateRide, fetchActiveRide } from "../../services/api";
@@ -23,6 +24,7 @@ type DriverState = "offline" | "online" | "ride_offer" | "navigating_pickup" | "
 export default function DriverHomeScreen() {
   const { user } = useAuth();
   const { lastMessage, sendMessage } = useWebSocket();
+  const navigation = useNavigation<any>();
 
 
   const [driverState, setDriverState] = useState<DriverState>("offline");
@@ -304,6 +306,9 @@ export default function DriverHomeScreen() {
     return (
       <SafeAreaView style={s.container}>
         <View style={s.offlineTop}>
+          <Pressable style={s.menuBtn} onPress={() => navigation.openDrawer()}>
+            <Ionicons name="menu" size={24} color={colors.text} />
+          </Pressable>
           <View style={s.greetingRow}>
             <View>
               <Text style={s.greeting}>Hello, {user?.name?.split(" ")[0] || "Driver"}</Text>
@@ -364,6 +369,9 @@ export default function DriverHomeScreen() {
   if (driverState === "online") {
     return (
       <SafeAreaView style={s.container}>
+        <Pressable style={s.menuBtnFloat} onPress={() => navigation.openDrawer()}>
+          <Ionicons name="menu" size={24} color={colors.text} />
+        </Pressable>
         <View style={s.onlineTop}>
           <View style={s.pulseWrap}>
             <View style={s.pulseDot} />
@@ -637,6 +645,14 @@ export default function DriverHomeScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
 
+  // Menu
+  menuBtn: { marginBottom: spacing.sm },
+  menuBtnFloat: {
+    position: "absolute", top: 50, left: spacing.md, zIndex: 10,
+    width: 44, height: 44, borderRadius: 22, backgroundColor: colors.white,
+    justifyContent: "center", alignItems: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
+  },
   // Offline
   offlineTop: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl },
   greetingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

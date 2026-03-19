@@ -1,64 +1,56 @@
-import { Tabs } from "expo-router";
-import { StyleSheet } from "react-native";
+import { Drawer } from "expo-router/drawer";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "../../constants/theme";
 
 export default function DriverLayout() {
   return (
-    <Tabs
+    <Drawer
       screenOptions={{
+        drawerActiveTintColor: colors.text,
+        drawerInactiveTintColor: colors.textMuted,
+        drawerStyle: {
+          backgroundColor: colors.background,
+          width: 280,
+        },
+        drawerLabelStyle: {
+          fontSize: 15,
+          fontWeight: "600",
+          marginLeft: -8,
+        },
         headerStyle: { backgroundColor: colors.background, shadowColor: "transparent", elevation: 0 },
         headerTitleStyle: { fontWeight: "700", color: colors.text, fontSize: 17 },
-        tabBarActiveTintColor: colors.text,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: styles.tabBar,
-        tabBarLabelStyle: styles.tabLabel,
+        headerTintColor: colors.text,
       }}
     >
-      <Tabs.Screen
+      <Drawer.Screen
         name="home"
         options={{
           title: "Home",
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="car-outline" size={size} color={color} />,
+          drawerIcon: ({ color, size }) => <Ionicons name="car-outline" size={size} color={color} />,
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
+        name="documents"
+        options={{
+          title: "Verification",
+          drawerIcon: ({ color, size }) => <Ionicons name="shield-checkmark-outline" size={size} color={color} />,
+        }}
+      />
+      <Drawer.Screen
         name="earnings"
         options={{
           title: "Earnings",
-          tabBarIcon: ({ color, size }) => <Ionicons name="wallet-outline" size={size} color={color} />,
+          drawerIcon: ({ color, size }) => <Ionicons name="wallet-outline" size={size} color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="documents"
-        options={{
-          title: "Verify",
-          tabBarIcon: ({ color, size }) => <Ionicons name="shield-checkmark-outline" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
+      <Drawer.Screen
         name="profile"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
+          drawerIcon: ({ color, size }) => <Ionicons name="settings-outline" size={size} color={color} />,
         }}
       />
-    </Tabs>
+    </Drawer>
   );
 }
-
-const styles = StyleSheet.create({
-  tabBar: {
-    backgroundColor: colors.background,
-    borderTopColor: colors.border,
-    borderTopWidth: 1,
-    height: 80,
-    paddingBottom: 20,
-    paddingTop: 8,
-  },
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-  },
-});

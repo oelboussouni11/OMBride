@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { useRide } from "../../context/RideContext";
 import { useWebSocket } from "../../context/WebSocketContext";
+import { useNavigation } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { estimateRide, requestRide, cancelRide, rateRide, fetchActiveRide, getSavedLocations, addSavedLocation, deleteSavedLocation, type EstimateResponse, type RideResponse, type SavedLocation } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
@@ -25,6 +26,7 @@ type RideState = "idle" | "entering_destination" | "estimate" | "searching" | "m
 export default function RiderHomeScreen() {
   const { pickup, dropoff, setPickup, setDropoff, currentRide, setCurrentRide } = useRide();
   const { lastMessage } = useWebSocket();
+  const navigation = useNavigation<any>();
 
   const [rideState, setRideState] = useState<RideState>("idle");
   const [estimate, setEstimate] = useState<EstimateResponse | null>(null);
@@ -421,6 +423,9 @@ export default function RiderHomeScreen() {
   if (rideState === "idle") {
     return (
       <SafeAreaView style={styles.container}>
+        <Pressable style={styles.menuBtnFloat} onPress={() => navigation.openDrawer()}>
+          <Ionicons name="menu" size={24} color={colors.text} />
+        </Pressable>
         <View style={styles.mapPlaceholder}>
           <Ionicons name="location" size={32} color={colors.primary} />
           <Text style={styles.mapText}>
@@ -797,6 +802,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     justifyContent: "center",
     alignItems: "center",
+  },
+  menuBtnFloat: {
+    position: "absolute", top: 50, left: spacing.md, zIndex: 10,
+    width: 44, height: 44, borderRadius: 22, backgroundColor: colors.white,
+    justifyContent: "center", alignItems: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
   },
   mapText: { fontSize: 14, color: colors.textSecondary, marginTop: spacing.sm },
   mapSubtext: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
