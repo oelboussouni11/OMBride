@@ -12,6 +12,7 @@ from dependencies import (
     get_current_user,
     get_redis,
     hash_password,
+    revoke_refresh_token,
     store_refresh_token,
     validate_refresh_token,
     verify_password,
@@ -172,6 +173,16 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account deactivated",
         )
+    if getattr(user, "account_status", "active") == "banned":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Account banned: {user.ban_reason or 'Contact support'}",
+        )
+    if getattr(user, "account_status", "active") == "on_hold":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account on hold. Contact support.",
+        )
 
     access_token = create_access_token(user.id, user.role)
     refresh_token = create_refresh_token(user.id)
@@ -209,6 +220,22 @@ async def refresh(
     await store_refresh_token(redis, user.id, new_refresh)
 
     return TokenResponse(access_token=new_access, refresh_token=new_refresh)
+
+
+@router.delete("/me")
+async def delete_account(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    redis=Depends(get_redis),
+):
+    """User deletes their own account. Soft delete — sets is_active=False."""
+    user.is_active = False
+    user.account_status = "deleted"
+    if user.driver:
+        user.driver.is_available = False
+    await revoke_refresh_token(redis, user.id)
+    await db.commit()
+    return {"message": "Account deleted. You can contact support to reactivate."}
 
 
 @router.get("/me", response_model=UserResponse)

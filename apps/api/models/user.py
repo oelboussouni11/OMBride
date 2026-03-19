@@ -28,6 +28,12 @@ class UserRole(str, enum.Enum):
     admin = "admin"
 
 
+class AccountStatus(str, enum.Enum):
+    active = "active"
+    on_hold = "on_hold"
+    banned = "banned"
+
+
 class DriverStatus(str, enum.Enum):
     pending = "pending"
     verified = "verified"
@@ -57,6 +63,8 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    account_status: Mapped[str] = mapped_column(String, default="active")  # active, on_hold, banned
+    ban_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     rider: Mapped["Rider | None"] = relationship(back_populates="user", uselist=False)

@@ -235,6 +235,12 @@ export function submitVerification(data: VerificationData) {
   });
 }
 
+// ── Account ────────────────────────────────────────────────────────────────
+
+export function deleteAccount() {
+  return apiFetch<{ message: string }>("/auth/me", { method: "DELETE" });
+}
+
 // ── User ───────────────────────────────────────────────────────────────────
 
 export function fetchMe() {

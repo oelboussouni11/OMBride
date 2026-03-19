@@ -7,8 +7,10 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from pydantic import BaseModel, Field
+
 from database import get_db
-from dependencies import require_admin
+from dependencies import get_current_user, require_admin
 from models.credit import CreditTransaction, CreditType
 from models.fare import FareConfig
 from models.ride import Ride, RideStatus
@@ -207,3 +209,48 @@ async def list_rides(
         )
         for r in rides
     ]
+
+
+# ── User Account Management ─────────────────────────────────────────────────
+
+
+class AccountActionRequest(BaseModel):
+    action: str = Field(..., description="'ban', 'on_hold', or 'activate'")
+    reason: str = Field(default="", description="Reason for ban/hold")
+
+
+@router.put("/users/{user_id}/status")
+async def update_user_status(
+    user_id: str,
+    body: AccountActionRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Admin bans, holds, or reactivates a user account."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role.value == "admin":
+        raise HTTPException(status_code=400, detail="Cannot modify admin accounts")
+
+    if body.action == "ban":
+        user.account_status = "banned"
+        user.ban_reason = body.reason or "Banned by admin"
+        user.is_active = False
+        if user.driver:
+            user.driver.is_available = False
+    elif body.action == "on_hold":
+        user.account_status = "on_hold"
+        user.ban_reason = body.reason or "Account on hold"
+        if user.driver:
+            user.driver.is_available = False
+    elif body.action == "activate":
+        user.account_status = "active"
+        user.ban_reason = None
+        user.is_active = True
+    else:
+        raise HTTPException(status_code=400, detail="Action must be 'ban', 'on_hold', or 'activate'")
+
+    await db.commit()
+    return {"status": user.account_status, "message": f"User {body.action}d successfully"}
