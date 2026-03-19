@@ -76,6 +76,32 @@ export function requestRide(data: {
   });
 }
 
+export interface ActiveRideResponse {
+  ride: {
+    id: string;
+    rider_id: string;
+    driver_id: string | null;
+    pickup_address: string;
+    dropoff_address: string;
+    distance_km: number | null;
+    duration_min: number | null;
+    fare: number | null;
+    status: string;
+    created_at: string;
+  } | null;
+  driver_info?: {
+    driver_name: string;
+    driver_phone: string;
+    vehicle_model: string;
+    plate_number: string;
+    average_rating: number;
+  };
+}
+
+export function fetchActiveRide() {
+  return apiFetch<ActiveRideResponse>("/rides/active");
+}
+
 export function fetchRideHistory() {
   return apiFetch<RideResponse[]>("/rides/history");
 }

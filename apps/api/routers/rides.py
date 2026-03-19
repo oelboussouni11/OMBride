@@ -47,6 +47,86 @@ async def _get_ride_or_404(db: AsyncSession, ride_id: UUID) -> Ride:
     return ride
 
 
+# ── Active Ride ──────────────────────────────────────────────────────────────
+
+
+@router.get("/active")
+async def get_active_ride(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get the current active ride for this user (if any).
+    Returns ride + driver/rider info for state recovery on refresh.
+    """
+    active_statuses = [
+        RideStatus.requested, RideStatus.matched,
+        RideStatus.arriving, RideStatus.in_progress,
+    ]
+
+    ride = None
+    if user.rider:
+        result = await db.execute(
+            select(Ride).where(
+                Ride.rider_id == user.rider.id,
+                Ride.status.in_(active_statuses),
+            ).order_by(Ride.created_at.desc()).limit(1)
+        )
+        ride = result.scalar_one_or_none()
+    elif user.driver:
+        result = await db.execute(
+            select(Ride).where(
+                Ride.driver_id == user.driver.id,
+                Ride.status.in_(active_statuses),
+            ).order_by(Ride.created_at.desc()).limit(1)
+        )
+        ride = result.scalar_one_or_none()
+
+    if ride is None:
+        return {"ride": None}
+
+    # Build response with driver info for rider, or rider info for driver
+    resp: dict = {
+        "ride": {
+            "id": str(ride.id),
+            "rider_id": str(ride.rider_id),
+            "driver_id": str(ride.driver_id) if ride.driver_id else None,
+            "pickup_address": ride.pickup_address,
+            "dropoff_address": ride.dropoff_address,
+            "distance_km": float(ride.distance_km) if ride.distance_km else None,
+            "duration_min": ride.duration_min,
+            "fare": float(ride.fare) if ride.fare else None,
+            "status": ride.status.value,
+            "created_at": ride.created_at.isoformat() if ride.created_at else None,
+        },
+    }
+
+    # If rider, include driver info
+    if user.rider and ride.driver_id:
+        from sqlalchemy.orm import selectinload as _sel
+        driver_result = await db.execute(
+            select(Driver).options(_sel(Driver.user)).where(Driver.id == ride.driver_id)
+        )
+        driver = driver_result.scalar_one_or_none()
+        if driver:
+            # Get driver average rating
+            from sqlalchemy import func as sqlfunc
+            avg_result = await db.execute(
+                select(sqlfunc.avg(Ride.rating)).where(
+                    Ride.driver_id == driver.id, Ride.rating.isnot(None)
+                )
+            )
+            avg_rating = avg_result.scalar()
+            resp["driver_info"] = {
+                "driver_name": driver.user.name,
+                "driver_phone": driver.user.phone,
+                "vehicle_model": driver.vehicle_model,
+                "plate_number": driver.plate_number,
+                "average_rating": round(float(avg_rating or 5.0), 1),
+            }
+
+    return resp
+
+
 # ── History ──────────────────────────────────────────────────────────────────
 
 
@@ -217,6 +297,15 @@ async def accept_ride(
     signal_driver_accepted(ride_id, driver.id)
 
     # Notify rider
+    # Get driver average rating
+    from sqlalchemy import func as sqlfunc
+    avg_result = await db.execute(
+        select(sqlfunc.avg(Ride.rating)).where(
+            Ride.driver_id == driver.id, Ride.rating.isnot(None)
+        )
+    )
+    avg_rating = avg_result.scalar()
+
     await rider_manager.send(
         ride.rider_id,
         {
@@ -227,6 +316,7 @@ async def accept_ride(
                 "driver_phone": user.phone,
                 "vehicle_model": driver.vehicle_model,
                 "plate_number": driver.plate_number,
+                "average_rating": round(float(avg_rating or 5.0), 1),
             },
         },
     )
@@ -363,15 +453,24 @@ async def complete_ride(
     driver = user.driver
     driver.credit_balance = float(driver.credit_balance) - commission
 
-    # Record credit transaction with ride fare info
+    # Record ride earned (the fare the driver made)
+    earned_txn = CreditTransaction(
+        driver_id=driver.id,
+        amount=fare_amount,
+        type=CreditType.ride_earned,
+        reference_code=f"Ride {str(ride.id)[:8]} — {ride.pickup_address} to {ride.dropoff_address}",
+    )
+    db.add(earned_txn)
+
+    # Record commission deduction
     commission_label = f"{config.commission_per_ride}%" if commission_type == "percentage" else f"{commission:.2f} DH"
-    txn = CreditTransaction(
+    fee_txn = CreditTransaction(
         driver_id=driver.id,
         amount=-commission,
         type=CreditType.ride_fee,
-        reference_code=f"Ride {str(ride.id)[:8]} — Fare: {fare_amount:.2f} DH, Commission: {commission_label}",
+        reference_code=f"Commission on {fare_amount:.2f} DH fare ({commission_label})",
     )
-    db.add(txn)
+    db.add(fee_txn)
 
     ride.status = RideStatus.completed
     ride.completed_at = datetime.now(timezone.utc)

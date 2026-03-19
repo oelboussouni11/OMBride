@@ -16,7 +16,7 @@ import * as Location from "expo-location";
 import { useRide } from "../../context/RideContext";
 import { useWebSocket } from "../../context/WebSocketContext";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { estimateRide, requestRide, cancelRide, rateRide, getSavedLocations, addSavedLocation, deleteSavedLocation, type EstimateResponse, type RideResponse, type SavedLocation } from "../../services/api";
+import { estimateRide, requestRide, cancelRide, rateRide, fetchActiveRide, getSavedLocations, addSavedLocation, deleteSavedLocation, type EstimateResponse, type RideResponse, type SavedLocation } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
 
 type RideState = "idle" | "entering_destination" | "estimate" | "searching" | "matched" | "arriving" | "in_progress" | "completed";
@@ -68,6 +68,38 @@ export default function RiderHomeScreen() {
       });
     })();
     getSavedLocations().then(setSavedLocations).catch(() => {});
+
+    // Restore active ride state on mount (survives refresh)
+    fetchActiveRide().then((data) => {
+      if (data.ride) {
+        const r = data.ride;
+        setCurrentRide({
+          id: r.id,
+          riderId: r.rider_id,
+          driverId: r.driver_id || undefined,
+          pickup: { latitude: 0, longitude: 0, address: r.pickup_address },
+          dropoff: { latitude: 0, longitude: 0, address: r.dropoff_address },
+          status: r.status as any,
+          fare: r.fare || undefined,
+          distance: r.distance_km || undefined,
+          duration: r.duration_min || undefined,
+          createdAt: r.created_at,
+          updatedAt: r.created_at,
+        });
+        setDropoff({ latitude: 0, longitude: 0, address: r.dropoff_address });
+        if (data.driver_info) {
+          setDriverInfo(data.driver_info);
+        }
+        // Map status to rideState
+        const statusMap: Record<string, RideState> = {
+          requested: "searching",
+          matched: "matched",
+          arriving: "arriving",
+          in_progress: "in_progress",
+        };
+        setRideState(statusMap[r.status] || "idle");
+      }
+    }).catch(() => {});
   }, []);
 
   // Listen for WS messages
@@ -109,24 +141,17 @@ export default function RiderHomeScreen() {
     }
   }, [lastMessage]);
 
-  // Search timer — counts up and auto-cancels after timeout
+  // Search timer — simple client counter for display, server handles actual timeout
   useEffect(() => {
     if (rideState === "searching") {
       setSearchSeconds(0);
       searchTimerRef.current = setInterval(() => {
-        setSearchSeconds((prev) => {
-          if (prev + 1 >= SEARCH_TIMEOUT) {
-            clearInterval(searchTimerRef.current);
-            handleCancel();
-            Alert.alert("No drivers found", "No drivers are available right now. Please try again later.");
-            return 0;
-          }
-          return prev + 1;
-        });
+        setSearchSeconds((prev) => prev + 1);
       }, 1000);
       return () => clearInterval(searchTimerRef.current);
     } else {
       clearInterval(searchTimerRef.current);
+      setSearchSeconds(0);
     }
   }, [rideState]);
 
@@ -210,10 +235,11 @@ export default function RiderHomeScreen() {
     }
     try {
       await cancelRide(currentRide.id);
+      resetRide();
     } catch (err: any) {
       Alert.alert("Error", err.message || "Could not cancel ride");
+      // Don't reset — ride is still active on backend
     }
-    resetRide();
   }
 
   function selectSavedLocation(loc: SavedLocation) {
@@ -487,9 +513,17 @@ export default function RiderHomeScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.driverName}>{driverInfo.driver_name}</Text>
-                <Text style={styles.driverVehicle}>
-                  {driverInfo.vehicle_model}
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
+                  <Text style={styles.driverVehicle}>{driverInfo.vehicle_model}</Text>
+                  {driverInfo.average_rating && (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                      <Ionicons name="star" size={12} color={colors.warning} />
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>
+                        {driverInfo.average_rating}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
               <View style={styles.plateTag}>
                 <Text style={styles.plateText}>{driverInfo.plate_number}</Text>
@@ -557,8 +591,8 @@ export default function RiderHomeScreen() {
       try {
         await rateRide(currentRide.id, selectedRating);
         setRatingSubmitted(true);
-      } catch {
-        setRatingSubmitted(true);
+      } catch (err: any) {
+        Alert.alert("Rating failed", err.message || "Could not submit rating. Try again.");
       }
     }
 

@@ -40,17 +40,17 @@ export default function EarningsScreen() {
 
   const todayRides = transactions.filter(
     (t) =>
-      t.type === "ride_fee" &&
+      t.type === "ride_earned" &&
       new Date(t.created_at).toDateString() === new Date().toDateString()
   ).length;
 
   const totalEarned = transactions
+    .filter((t) => t.type === "ride_earned")
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const totalCommission = transactions
     .filter((t) => t.type === "ride_fee")
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const totalTopups = transactions
-    .filter((t) => t.type === "topup" && t.amount > 0)
-    .reduce((sum, t) => sum + t.amount, 0);
 
   async function handleTopup() {
     const amount = parseFloat(topupAmount);
@@ -108,12 +108,12 @@ export default function EarningsScreen() {
           <View style={styles.miniStatDivider} />
           <View style={styles.miniStat}>
             <Text style={styles.miniStatValue}>{totalEarned.toFixed(0)}</Text>
-            <Text style={styles.miniStatLabel}>Total Rides (DH)</Text>
+            <Text style={styles.miniStatLabel}>Earned (DH)</Text>
           </View>
           <View style={styles.miniStatDivider} />
           <View style={styles.miniStat}>
-            <Text style={styles.miniStatValue}>{totalTopups.toFixed(0)}</Text>
-            <Text style={styles.miniStatLabel}>Top-ups (DH)</Text>
+            <Text style={styles.miniStatValue}>{totalCommission.toFixed(0)}</Text>
+            <Text style={styles.miniStatLabel}>Commission (DH)</Text>
           </View>
         </View>
         <Pressable style={styles.topupButton} onPress={() => setShowTopup(true)}>
@@ -135,14 +135,20 @@ export default function EarningsScreen() {
           contentContainerStyle={{ paddingBottom: 24 }}
           renderItem={({ item }) => (
             <View style={styles.txnRow}>
-              <View style={[styles.txnIcon, item.type === "topup" ? styles.txnIconTopup : styles.txnIconFee]}>
-                <Text style={[styles.txnIconText, { color: item.type === "topup" ? colors.success : colors.danger }]}>
-                  {item.type === "topup" ? "+" : "-"}
+              <View style={[styles.txnIcon,
+                item.type === "ride_earned" ? styles.txnIconEarned :
+                item.type === "topup" ? styles.txnIconTopup : styles.txnIconFee
+              ]}>
+                <Text style={[styles.txnIconText, {
+                  color: item.amount > 0 ? colors.success : colors.danger
+                }]}>
+                  {item.amount > 0 ? "+" : "-"}
                 </Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.txnType}>
-                  {item.type === "topup" ? "Credit Top-up" : "Ride Commission"}
+                  {item.type === "ride_earned" ? "Ride Earned" :
+                   item.type === "topup" ? "Credit Top-up" : "Commission"}
                 </Text>
                 <Text style={styles.txnDate}>{formatDate(item.created_at)}</Text>
                 {item.reference_code ? (
@@ -278,6 +284,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   txnIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
+  txnIconEarned: { backgroundColor: "#dbeafe" },
   txnIconTopup: { backgroundColor: "#dcfce7" },
   txnIconFee: { backgroundColor: "#fee2e2" },
   txnIconText: { fontSize: 18, fontWeight: "700" },

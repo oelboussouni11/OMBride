@@ -81,11 +81,7 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
             return
         actual_driver_id = driver.id
 
-        # Mark driver as available
-        await db.execute(
-            update(Driver).where(Driver.id == actual_driver_id).values(is_available=True)
-        )
-        await db.commit()
+        # Don't mark available on connect — wait for go_online or location_update
 
     user_id = UUID(user_id_str)
     await driver_manager.connect(user_id, ws)
@@ -123,7 +119,7 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
                 # Forward to rider if driver has an active ride
                 await forward_driver_location_to_rider(actual_driver_id, lat, lng)
 
-                # Batch flush to PostgreSQL every PG_LOCATION_FLUSH_INTERVAL
+                # Update location + mark available in PostgreSQL
                 now = time.monotonic()
                 if now - last_pg_flush >= PG_LOCATION_FLUSH_INTERVAL:
                     last_pg_flush = now
@@ -133,6 +129,7 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
                             .where(Driver.id == actual_driver_id)
                             .values(
                                 current_location=f"SRID=4326;POINT({lng} {lat})",
+                                is_available=True,
                                 location_updated_at=__import__("datetime").datetime.now(
                                     __import__("datetime").timezone.utc
                                 ),

@@ -13,7 +13,7 @@ import * as Location from "expo-location";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAuth } from "../../context/AuthContext";
 import { useWebSocket } from "../../context/WebSocketContext";
-import { acceptRide, arrivingRide, startRide, completeRide, fetchMe, rateRide } from "../../services/api";
+import { acceptRide, arrivingRide, startRide, completeRide, fetchMe, rateRide, fetchActiveRide } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
 
 type DriverState = "offline" | "online" | "ride_offer" | "navigating_pickup" | "at_pickup" | "in_ride" | "completed";
@@ -39,6 +39,29 @@ export default function DriverHomeScreen() {
       if (me.driver) {
         setCreditBalance(me.driver.credit_balance);
         setDriverStatus(me.driver.status);
+      }
+    }).catch(() => {});
+
+    // Restore active ride state on mount (survives refresh)
+    fetchActiveRide().then((data) => {
+      if (data.ride && data.ride.driver_id) {
+        const r = data.ride;
+        setCurrentRideId(r.id);
+        setCurrentRide({
+          ride_id: r.id,
+          pickup_address: r.pickup_address,
+          dropoff_address: r.dropoff_address,
+          fare: r.fare,
+          distance_km: r.distance_km,
+          duration_min: r.duration_min,
+        });
+        const statusMap: Record<string, DriverState> = {
+          matched: "navigating_pickup",
+          arriving: "at_pickup",
+          in_progress: "in_ride",
+        };
+        const mapped = statusMap[r.status];
+        if (mapped) setDriverState(mapped);
       }
     }).catch(() => {});
   }, []);
@@ -355,7 +378,11 @@ export default function DriverHomeScreen() {
   if (driverState === "completed") {
     async function submitRating() {
       if (selectedRating === 0 || !currentRideId) return;
-      try { await rateRide(currentRideId, selectedRating); } catch {}
+      try {
+        await rateRide(currentRideId, selectedRating);
+      } catch (err: any) {
+        Alert.alert("Rating failed", err.message || "Could not submit rating.");
+      }
       resetToOnline();
     }
 

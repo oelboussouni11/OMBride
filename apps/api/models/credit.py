@@ -14,6 +14,7 @@ from database import Base
 class CreditType(str, enum.Enum):
     topup = "topup"
     ride_fee = "ride_fee"
+    ride_earned = "ride_earned"
 
 
 class CreditTransaction(Base):

@@ -4,7 +4,7 @@ import asyncio
 import time
 from uuid import UUID
 
-from sqlalchemy import Numeric, func, select, text
+from sqlalchemy import Numeric, func, literal_column, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_session_factory
@@ -90,16 +90,15 @@ async def find_nearby_drivers(
 
     # Weighted formula:
     # match_score = (avg_rating * weight_rating) - (distance_km * weight_distance)
-    # distance_km = ST_Distance(...) / 1000
-    distance_expr = text(
-        "ST_Distance("
-        "drivers.current_location::geography, "
-        f"ST_SetSRID(ST_MakePoint({lng}, {lat}), 4326)::geography) / 1000.0"
+    distance_km_expr = literal_column(
+        f"(ST_Distance("
+        f"drivers.current_location::geography, "
+        f"ST_SetSRID(ST_MakePoint({lng}, {lat}), 4326)::geography) / 1000.0)"
     )
 
     match_score = (
         func.coalesce(avg_rating_sub.c.avg_rating, 5.0) * w_rating
-        - distance_expr * w_distance
+        - distance_km_expr * w_distance
     )
 
     stmt = (
