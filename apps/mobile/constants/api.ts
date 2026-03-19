@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
 
-const localhost = "http://localhost:8000";
+const localhost = "http://192.168.11.103:8000";
 
 export const API_BASE_URL =
   Constants.expoConfig?.extra?.apiUrl ?? localhost;

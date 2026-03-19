@@ -7,6 +7,7 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
@@ -39,13 +40,32 @@ export default function DriverHomeScreen() {
   const [rideElapsed, setRideElapsed] = useState(0);
   const rideTimerRef = useRef<ReturnType<typeof setInterval>>();
 
+  // Recover state when user returns to app
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    function onVisible() {
+      if (document.visibilityState === "visible" && currentRideId) {
+        fetchActiveRide().then((data) => {
+          if (!data.ride) { setCurrentRideId(null); setCurrentRide(null); setDriverState("online"); return; }
+          const statusMap: Record<string, DriverState> = {
+            matched: "navigating_pickup", arriving: "at_pickup", in_progress: "in_ride",
+          };
+          const s = statusMap[data.ride.status];
+          if (s) setDriverState(s);
+        }).catch(() => {});
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [currentRideId]);
+
   useEffect(() => {
     fetchMe().then((me) => {
       if (me.driver) {
         setCreditBalance(me.driver.credit_balance);
-        setDriverStatus(me.driver.status);
+        setDriverStatus(me.driver.status || "pending");
       }
-    }).catch(() => {});
+    }).catch((err) => { console.log("fetchMe failed:", err); setDriverStatus("error"); });
 
     // Restore active ride state on mount (survives refresh)
     fetchActiveRide().then((data) => {
@@ -89,6 +109,42 @@ export default function DriverHomeScreen() {
     }
   }, [lastMessage]);
 
+  // Poll active ride status every 3s — recovers state when returning to app
+  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  useEffect(() => {
+    const shouldPoll = driverState === "navigating_pickup" || driverState === "at_pickup" || driverState === "in_ride";
+    if (shouldPoll) {
+      pollRef.current = setInterval(async () => {
+        try {
+          const data = await fetchActiveRide();
+          if (!data.ride) {
+            // Ride gone (cancelled)
+            setCurrentRideId(null);
+            setCurrentRide(null);
+            setDriverState("online");
+            return;
+          }
+          const r = data.ride;
+          const statusMap: Record<string, DriverState> = {
+            matched: "navigating_pickup",
+            arriving: "at_pickup",
+            in_progress: "in_ride",
+            completed: "completed",
+            cancelled: "online",
+          };
+          const newState = statusMap[r.status];
+          if (newState && newState !== driverState) {
+            if (newState === "online") { setCurrentRideId(null); setCurrentRide(null); }
+            setDriverState(newState);
+          }
+        } catch {}
+      }, 3000);
+      return () => clearInterval(pollRef.current);
+    } else {
+      clearInterval(pollRef.current);
+    }
+  }, [driverState]);
+
   // Ride elapsed timer — starts when driver accepts, enables cancel after 4 min
   useEffect(() => {
     if (driverState === "navigating_pickup" || driverState === "at_pickup") {
@@ -116,12 +172,24 @@ export default function DriverHomeScreen() {
   }, [driverState]);
 
   async function goOnline() {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") { Alert.alert("Permission needed", "Location is required."); return; }
-    locationWatchRef.current = await Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
-      (loc) => sendMessage({ type: "location_update", data: { lat: loc.coords.latitude, lng: loc.coords.longitude } })
-    );
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === "granted") {
+        locationWatchRef.current = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
+          (loc) => sendMessage({ type: "location_update", data: { lat: loc.coords.latitude, lng: loc.coords.longitude } })
+        );
+        setDriverState("online");
+        return;
+      }
+    } catch {}
+    // Fallback: send a default location (Rabat) if geolocation fails (HTTP/web)
+    sendMessage({ type: "location_update", data: { lat: 33.9716, lng: -6.8498 } });
+    // Keep sending location every 5s
+    const interval = setInterval(() => {
+      sendMessage({ type: "location_update", data: { lat: 33.9716, lng: -6.8498 } });
+    }, 5000);
+    locationWatchRef.current = { remove: () => clearInterval(interval) } as any;
     setDriverState("online");
   }
 
@@ -244,14 +312,23 @@ export default function DriverHomeScreen() {
             )}
           </View>
 
-          <Pressable
-            style={[s.goOnlineBtn, driverStatus !== "verified" && s.btnDisabled]}
-            onPress={goOnline}
-            disabled={driverStatus !== "verified"}
-          >
-            <Ionicons name="power" size={22} color={colors.white} />
-            <Text style={s.goOnlineBtnText}>Go Online</Text>
-          </Pressable>
+          {driverStatus === "loading" ? (
+            <ActivityIndicator size="large" color={colors.primary} />
+          ) : driverStatus === "error" ? (
+            <Pressable style={s.goOnlineBtn} onPress={goOnline}>
+              <Ionicons name="power" size={22} color={colors.white} />
+              <Text style={s.goOnlineBtnText}>Go Online (offline mode)</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[s.goOnlineBtn, driverStatus !== "verified" && s.btnDisabled]}
+              onPress={goOnline}
+              disabled={driverStatus !== "verified"}
+            >
+              <Ionicons name="power" size={22} color={colors.white} />
+              <Text style={s.goOnlineBtnText}>Go Online</Text>
+            </Pressable>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -308,12 +385,22 @@ export default function DriverHomeScreen() {
           <View style={s.routeCard}>
             <View style={s.routeRow}>
               <View style={[s.routeDot, { backgroundColor: colors.success }]} />
-              <Text style={s.routeText} numberOfLines={1}>{rideOffer.pickup_address || "Pickup"}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.routeText} numberOfLines={1}>{rideOffer.pickup_address || "Pickup"}</Text>
+                {rideOffer.pickup_lat ? (
+                  <Text style={s.routeCoord}>{rideOffer.pickup_lat.toFixed(5)}, {rideOffer.pickup_lng.toFixed(5)}</Text>
+                ) : null}
+              </View>
             </View>
             <View style={s.routeLine} />
             <View style={s.routeRow}>
               <View style={[s.routeDot, { backgroundColor: colors.danger }]} />
-              <Text style={s.routeText} numberOfLines={1}>{rideOffer.dropoff_address || "Dropoff"}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.routeText} numberOfLines={1}>{rideOffer.dropoff_address || "Dropoff"}</Text>
+                {rideOffer.dropoff_lat ? (
+                  <Text style={s.routeCoord}>{rideOffer.dropoff_lat.toFixed(5)}, {rideOffer.dropoff_lng.toFixed(5)}</Text>
+                ) : null}
+              </View>
             </View>
           </View>
 
@@ -328,7 +415,7 @@ export default function DriverHomeScreen() {
             {rideOffer.distance_km ? (
               <View style={s.offerDetailBox}>
                 <Text style={s.offerDetailValue}>{rideOffer.distance_km} km</Text>
-                <Text style={s.offerDetailLabel}>Distance</Text>
+                <Text style={s.offerDetailLabel}>Trip</Text>
               </View>
             ) : null}
             {rideOffer.duration_min ? (
@@ -370,11 +457,20 @@ export default function DriverHomeScreen() {
             <Text style={s.rideTimer}>{formatTimer(rideElapsed)}</Text>
           </View>
           <Text style={s.rideSheetAddress}>{currentRide?.pickup_address}</Text>
+          {currentRide?.pickup_lat ? <Text style={s.rideSheetCoord}>{currentRide.pickup_lat.toFixed(5)}, {currentRide.pickup_lng.toFixed(5)}</Text> : null}
           {currentRide?.fare && <Text style={s.rideSheetFare}>{currentRide.fare} DH</Text>}
-          <Pressable style={s.wazeBtn} onPress={() => openWaze(0, 0)}>
-            <Ionicons name="navigate-outline" size={16} color={colors.text} />
-            <Text style={s.wazeBtnText}>Open in Waze</Text>
-          </Pressable>
+          <View style={s.actionRow}>
+            <Pressable style={s.wazeBtn} onPress={() => openWaze(currentRide?.pickup_lat || 0, currentRide?.pickup_lng || 0)}>
+              <Ionicons name="navigate-outline" size={16} color={colors.text} />
+              <Text style={s.wazeBtnText}>Waze</Text>
+            </Pressable>
+            {currentRide?.rider_phone && (
+              <Pressable style={s.callBtn} onPress={() => Linking.openURL(`tel:${currentRide.rider_phone}`)}>
+                <Ionicons name="call-outline" size={16} color={colors.text} />
+                <Text style={s.wazeBtnText}>Call Rider</Text>
+              </Pressable>
+            )}
+          </View>
           <Pressable style={s.rideActionBtn} onPress={handleArriving} disabled={loading}>
             {loading ? <ActivityIndicator color={colors.white} /> : <Text style={s.rideActionText}>Arrived at Pickup</Text>}
           </Pressable>
@@ -438,11 +534,20 @@ export default function DriverHomeScreen() {
             <Text style={s.rideStatusText}>In progress</Text>
           </View>
           <Text style={s.rideSheetAddress}>{currentRide?.dropoff_address}</Text>
+          {currentRide?.dropoff_lat ? <Text style={s.rideSheetCoord}>{currentRide.dropoff_lat.toFixed(5)}, {currentRide.dropoff_lng.toFixed(5)}</Text> : null}
           {currentRide?.fare && <Text style={s.rideSheetFare}>{currentRide.fare} DH</Text>}
-          <Pressable style={s.wazeBtn} onPress={() => openWaze(0, 0)}>
-            <Ionicons name="navigate-outline" size={16} color={colors.text} />
-            <Text style={s.wazeBtnText}>Open in Waze</Text>
-          </Pressable>
+          <View style={s.actionRow}>
+            <Pressable style={s.wazeBtn} onPress={() => openWaze(currentRide?.dropoff_lat || 0, currentRide?.dropoff_lng || 0)}>
+              <Ionicons name="navigate-outline" size={16} color={colors.text} />
+              <Text style={s.wazeBtnText}>Waze</Text>
+            </Pressable>
+            {currentRide?.rider_phone && (
+              <Pressable style={s.callBtn} onPress={() => Linking.openURL(`tel:${currentRide.rider_phone}`)}>
+                <Ionicons name="call-outline" size={16} color={colors.text} />
+                <Text style={s.wazeBtnText}>Call Rider</Text>
+              </Pressable>
+            )}
+          </View>
           <Pressable style={[s.rideActionBtn, { backgroundColor: colors.success }]} onPress={handleComplete} disabled={loading}>
             {loading ? <ActivityIndicator color={colors.white} /> : <Text style={s.rideActionText}>Complete Ride</Text>}
           </Pressable>
@@ -475,14 +580,20 @@ export default function DriverHomeScreen() {
           <Text style={s.ratePrompt}>Rate the rider</Text>
           <View style={s.starsRow}>
             {[1, 2, 3, 4, 5].map((star) => (
-              <Pressable key={star} onPress={() => setSelectedRating(star)}>
-                <Ionicons name={star <= selectedRating ? "star" : "star-outline"} size={32} color={star <= selectedRating ? colors.warning : colors.border} />
+              <Pressable key={star} onPress={() => setSelectedRating(star)} style={s.starBtn}>
+                <Ionicons name={star <= selectedRating ? "star" : "star-outline"} size={36} color={star <= selectedRating ? colors.warning : colors.border} />
               </Pressable>
             ))}
           </View>
 
-          <Pressable style={s.rideActionBtn} onPress={selectedRating > 0 ? submitRating : resetToOnline}>
-            <Text style={s.rideActionText}>{selectedRating > 0 ? "Submit & Continue" : "Skip & Continue"}</Text>
+          {selectedRating > 0 ? (
+            <Pressable style={s.submitRatingBtn} onPress={submitRating}>
+              <Ionicons name="checkmark-circle-outline" size={20} color={colors.white} />
+              <Text style={s.submitRatingText}>Submit Rating</Text>
+            </Pressable>
+          ) : null}
+          <Pressable style={s.skipBtn} onPress={resetToOnline}>
+            <Text style={s.skipBtnText}>{selectedRating > 0 ? "Skip" : "Skip Rating"}</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -551,7 +662,8 @@ const s = StyleSheet.create({
   routeRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   routeDot: { width: 10, height: 10, borderRadius: 5 },
   routeLine: { width: 2, height: 16, backgroundColor: colors.border, marginLeft: 4, marginVertical: 2 },
-  routeText: { fontSize: 15, fontWeight: "600", color: colors.text, flex: 1 },
+  routeText: { fontSize: 15, fontWeight: "600", color: colors.text },
+  routeCoord: { fontSize: 11, color: colors.textMuted, marginTop: 1, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
   offerDetailsRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
   offerDetailBox: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.sm, padding: spacing.sm + 2, alignItems: "center" },
   offerDetailValue: { fontSize: 18, fontWeight: "700", color: colors.text },
@@ -575,11 +687,12 @@ const s = StyleSheet.create({
   rideStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.sm },
   rideStatusDot: { width: 10, height: 10, borderRadius: 5 },
   rideStatusText: { fontSize: 16, fontWeight: "700", color: colors.text },
-  rideSheetAddress: { fontSize: 15, color: colors.textSecondary, marginBottom: spacing.sm },
+  rideSheetAddress: { fontSize: 15, color: colors.textSecondary, marginBottom: 2 },
+  rideSheetCoord: { fontSize: 11, color: colors.textMuted, marginBottom: spacing.sm, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
   rideSheetFare: { fontSize: 22, fontWeight: "800", color: colors.text, marginBottom: spacing.md },
   wazeBtn: {
-    flexDirection: "row", borderWidth: 2, borderColor: colors.border, borderRadius: radius.sm,
-    paddingVertical: 12, alignItems: "center", justifyContent: "center", gap: spacing.sm, marginBottom: spacing.sm,
+    flex: 1, flexDirection: "row", borderWidth: 2, borderColor: colors.border, borderRadius: radius.sm,
+    paddingVertical: 12, alignItems: "center", justifyContent: "center", gap: spacing.sm,
   },
   wazeBtnText: { fontSize: 15, fontWeight: "600", color: colors.text },
   rideTimer: { fontSize: 14, fontWeight: "700", color: colors.textMuted, marginLeft: "auto" },
@@ -600,6 +713,19 @@ const s = StyleSheet.create({
   completedFare: { fontSize: 40, fontWeight: "800", color: colors.text, marginTop: spacing.sm },
   completedNote: { fontSize: 14, color: colors.textMuted, marginTop: spacing.xs },
   completedBalance: { fontSize: 16, fontWeight: "600", color: colors.textSecondary, marginTop: spacing.sm },
+  actionRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
+  callBtn: {
+    flex: 1, flexDirection: "row", borderWidth: 2, borderColor: colors.success, borderRadius: radius.sm,
+    paddingVertical: 12, alignItems: "center", justifyContent: "center", gap: spacing.sm,
+  },
   ratePrompt: { fontSize: 16, fontWeight: "600", color: colors.textSecondary, marginTop: spacing.xl },
-  starsRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.xl },
+  starsRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.md, marginBottom: spacing.lg },
+  starBtn: { padding: spacing.xs },
+  submitRatingBtn: {
+    flexDirection: "row", backgroundColor: colors.success, borderRadius: radius.md,
+    paddingVertical: 16, paddingHorizontal: spacing.xl, alignItems: "center", justifyContent: "center", gap: spacing.sm, width: "100%",
+  },
+  submitRatingText: { color: colors.white, fontSize: 16, fontWeight: "700" },
+  skipBtn: { paddingVertical: 14, alignItems: "center", marginTop: spacing.sm },
+  skipBtnText: { fontSize: 15, fontWeight: "500", color: colors.textMuted },
 });

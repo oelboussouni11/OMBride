@@ -10,6 +10,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
@@ -29,6 +30,12 @@ export default function RiderHomeScreen() {
   const [estimate, setEstimate] = useState<EstimateResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [locationGranted, setLocationGranted] = useState(false);
+
+  // Pickup input
+  const [pickupAddress, setPickupAddress] = useState("");
+  const [pickupLat, setPickupLat] = useState("");
+  const [pickupLng, setPickupLng] = useState("");
+  const [useCurrentLocation, setUseCurrentLocation] = useState(true);
 
   // Destination input
   const [destAddress, setDestAddress] = useState("");
@@ -54,20 +61,49 @@ export default function RiderHomeScreen() {
   const [driverInfo, setDriverInfo] = useState<any>(null);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Recover state when user returns to app (tab becomes visible)
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    function onVisible() {
+      if (document.visibilityState === "visible" && activeRideIdRef.current) {
+        fetchActiveRide().then((data) => {
+          if (!data.ride) { resetRide(); return; }
+          const statusMap: Record<string, RideState> = {
+            requested: "searching", matched: "matched", arriving: "arriving",
+            in_progress: "in_progress", completed: "completed",
+          };
+          const newState = statusMap[data.ride.status];
+          if (newState) setRideState(newState);
+          if (data.driver_info) setDriverInfo(data.driver_info);
+        }).catch(() => {});
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
   // Get user location and saved locations on mount
   useEffect(() => {
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission needed", "Location permission is required.");
-        return;
-      }
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          setLocationGranted(true);
+          const loc = await Location.getCurrentPositionAsync({});
+          setPickup({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            address: "Current Location",
+          });
+          return;
+        }
+      } catch {}
+      // Fallback: default to Rabat, Morocco if location fails (HTTP doesn't support geolocation)
       setLocationGranted(true);
-      const loc = await Location.getCurrentPositionAsync({});
       setPickup({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-        address: "Current Location",
+        latitude: 33.9716,
+        longitude: -6.8498,
+        address: "Rabat (default)",
       });
     })();
     getSavedLocations().then(setSavedLocations).catch(() => {});
@@ -136,6 +172,44 @@ export default function RiderHomeScreen() {
     }
   }, [lastMessage]);
 
+  // Poll active ride status every 3s as fallback (WS messages can be missed on mobile)
+  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  useEffect(() => {
+    const shouldPoll = rideState === "searching" || rideState === "matched" || rideState === "arriving" || rideState === "in_progress";
+    if (shouldPoll) {
+      pollRef.current = setInterval(async () => {
+        try {
+          const data = await fetchActiveRide();
+          if (!data.ride) {
+            // Ride gone (cancelled or completed by server)
+            if (rideState === "searching") resetRide();
+            return;
+          }
+          const r = data.ride;
+          const statusMap: Record<string, RideState> = {
+            requested: "searching",
+            matched: "matched",
+            arriving: "arriving",
+            in_progress: "in_progress",
+            completed: "completed",
+            cancelled: "idle",
+          };
+          const newState = statusMap[r.status];
+          if (newState && newState !== rideState) {
+            if (newState === "idle") { resetRide(); return; }
+            setRideState(newState);
+            // Update ride data
+            if (r.fare) setCurrentRide((prev: any) => prev ? { ...prev, fare: r.fare, distance: r.distance_km, duration: r.duration_min } : prev);
+            if (data.driver_info && !driverInfo) setDriverInfo(data.driver_info);
+          }
+        } catch {}
+      }, 3000);
+      return () => clearInterval(pollRef.current);
+    } else {
+      clearInterval(pollRef.current);
+    }
+  }, [rideState]);
+
   // Search timer — simple client counter for display, server handles actual timeout
   useEffect(() => {
     if (rideState === "searching") {
@@ -157,6 +231,10 @@ export default function RiderHomeScreen() {
     activeRideIdRef.current = null;
     setDriverInfo(null);
     setDriverLocation(null);
+    setPickupAddress("");
+    setPickupLat("");
+    setPickupLng("");
+    setUseCurrentLocation(true);
     setDestAddress("");
     setDestLat("");
     setDestLng("");
@@ -164,18 +242,30 @@ export default function RiderHomeScreen() {
   }
 
   async function handleEstimate() {
-    if (!pickup || !destLat || !destLng) {
+    if (!destLat || !destLng) {
       Alert.alert("Error", "Please enter destination coordinates.");
       return;
     }
+    // Resolve pickup coordinates
+    let pLat: number, pLng: number, pAddr: string;
+    if (useCurrentLocation && pickup) {
+      pLat = pickup.latitude;
+      pLng = pickup.longitude;
+      pAddr = pickup.address || "Current Location";
+    } else if (pickupLat && pickupLng) {
+      pLat = parseFloat(pickupLat);
+      pLng = parseFloat(pickupLng);
+      pAddr = pickupAddress || "Custom Pickup";
+    } else {
+      Alert.alert("Error", "Please enter pickup coordinates or use current location.");
+      return;
+    }
+    // Update pickup in context
+    setPickup({ latitude: pLat, longitude: pLng, address: pAddr });
+
     setLoading(true);
     try {
-      const est = await estimateRide(
-        pickup.latitude,
-        pickup.longitude,
-        parseFloat(destLat),
-        parseFloat(destLng)
-      );
+      const est = await estimateRide(pLat, pLng, parseFloat(destLat), parseFloat(destLng));
       setEstimate(est);
       setDropoff({
         latitude: parseFloat(destLat),
@@ -364,11 +454,43 @@ export default function RiderHomeScreen() {
   if (rideState === "entering_destination") {
     return (
       <SafeAreaView style={styles.container}>
-        <KeyboardAvoidingView
-          style={styles.destinationContainer}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
-          <Text style={styles.sheetTitle}>Enter Destination</Text>
+        <ScrollView style={styles.destinationContainer} keyboardShouldPersistTaps="handled">
+          {/* Pickup */}
+          <Text style={styles.sectionLabel}>PICKUP</Text>
+          <Pressable
+            style={[styles.toggleRow, useCurrentLocation && styles.toggleRowActive]}
+            onPress={() => setUseCurrentLocation(true)}
+          >
+            <Ionicons name={useCurrentLocation ? "radio-button-on" : "radio-button-off"} size={20} color={useCurrentLocation ? colors.primary : colors.textMuted} />
+            <Text style={[styles.toggleText, useCurrentLocation && styles.toggleTextActive]}>
+              Use Current Location {pickup ? `(${pickup.latitude.toFixed(4)}, ${pickup.longitude.toFixed(4)})` : ""}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.toggleRow, !useCurrentLocation && styles.toggleRowActive]}
+            onPress={() => setUseCurrentLocation(false)}
+          >
+            <Ionicons name={!useCurrentLocation ? "radio-button-on" : "radio-button-off"} size={20} color={!useCurrentLocation ? colors.primary : colors.textMuted} />
+            <Text style={[styles.toggleText, !useCurrentLocation && styles.toggleTextActive]}>Enter Manually</Text>
+          </Pressable>
+          {!useCurrentLocation && (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="Pickup address"
+                placeholderTextColor={colors.textMuted}
+                value={pickupAddress}
+                onChangeText={setPickupAddress}
+              />
+              <View style={styles.coordRow}>
+                <TextInput style={[styles.input, styles.coordInput]} placeholder="Lat" placeholderTextColor={colors.textMuted} value={pickupLat} onChangeText={setPickupLat} keyboardType="decimal-pad" />
+                <TextInput style={[styles.input, styles.coordInput]} placeholder="Lng" placeholderTextColor={colors.textMuted} value={pickupLng} onChangeText={setPickupLng} keyboardType="decimal-pad" />
+              </View>
+            </>
+          )}
+
+          {/* Destination */}
+          <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>DESTINATION</Text>
           <TextInput
             style={styles.input}
             placeholder="Destination address"
@@ -377,23 +499,10 @@ export default function RiderHomeScreen() {
             onChangeText={setDestAddress}
           />
           <View style={styles.coordRow}>
-            <TextInput
-              style={[styles.input, styles.coordInput]}
-              placeholder="Latitude"
-              placeholderTextColor={colors.textMuted}
-              value={destLat}
-              onChangeText={setDestLat}
-              keyboardType="decimal-pad"
-            />
-            <TextInput
-              style={[styles.input, styles.coordInput]}
-              placeholder="Longitude"
-              placeholderTextColor={colors.textMuted}
-              value={destLng}
-              onChangeText={setDestLng}
-              keyboardType="decimal-pad"
-            />
+            <TextInput style={[styles.input, styles.coordInput]} placeholder="Lat" placeholderTextColor={colors.textMuted} value={destLat} onChangeText={setDestLat} keyboardType="decimal-pad" />
+            <TextInput style={[styles.input, styles.coordInput]} placeholder="Lng" placeholderTextColor={colors.textMuted} value={destLng} onChangeText={setDestLng} keyboardType="decimal-pad" />
           </View>
+
           <Pressable style={styles.primaryButton} onPress={handleEstimate} disabled={loading}>
             {loading ? (
               <ActivityIndicator color={colors.white} />
@@ -403,13 +512,14 @@ export default function RiderHomeScreen() {
           </Pressable>
           {destLat && destLng ? (
             <Pressable style={styles.saveLocationButton} onPress={handleSaveLocation}>
-              <Text style={styles.saveLocationText}>Save this location</Text>
+              <Text style={styles.saveLocationText}>Save destination</Text>
             </Pressable>
           ) : null}
           <Pressable style={styles.secondaryButton} onPress={() => setRideState("idle")}>
             <Text style={styles.secondaryButtonText}>Cancel</Text>
           </Pressable>
-        </KeyboardAvoidingView>
+          <View style={{ height: 40 }} />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -557,10 +667,11 @@ export default function RiderHomeScreen() {
 
           {/* Call driver */}
           {driverInfo?.driver_phone && (
-            <View style={styles.contactRow}>
-              <Text style={styles.contactLabel}>Contact driver</Text>
-              <Text style={styles.contactPhone}>{driverInfo.driver_phone}</Text>
-            </View>
+            <Pressable style={styles.callDriverBtn} onPress={() => Linking.openURL(`tel:${driverInfo.driver_phone}`)}>
+              <Ionicons name="call-outline" size={16} color={colors.success} />
+              <Text style={styles.callDriverText}>Call {driverInfo.driver_name?.split(" ")[0] || "Driver"}</Text>
+              <Text style={styles.callDriverPhone}>{driverInfo.driver_phone}</Text>
+            </Pressable>
           )}
 
           {/* Route */}
@@ -689,7 +800,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
     padding: spacing.lg,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.lg,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textMuted,
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    marginBottom: spacing.xs,
+  },
+  toggleRowActive: {
+    backgroundColor: colors.surface,
+  },
+  toggleText: {
+    fontSize: 14,
+    color: colors.textMuted,
+    flex: 1,
+  },
+  toggleTextActive: {
+    color: colors.text,
+    fontWeight: "600",
   },
   input: {
     borderWidth: 1,
@@ -814,17 +953,18 @@ const styles = StyleSheet.create({
   },
   rideDetailLabel: { fontSize: 11, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3 },
   rideDetailValue: { fontSize: 16, fontWeight: "700", color: colors.text, marginTop: 2 },
-  contactRow: {
+  callDriverBtn: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    gap: spacing.sm,
+    backgroundColor: "#dcfce7",
+    borderRadius: radius.sm,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
-  contactLabel: { fontSize: 13, color: colors.textMuted },
-  contactPhone: { fontSize: 14, fontWeight: "600", color: colors.text },
+  callDriverText: { fontSize: 14, fontWeight: "600", color: colors.success, flex: 1 },
+  callDriverPhone: { fontSize: 13, color: colors.textMuted },
   routeRow: {
     flexDirection: "row",
     gap: spacing.md,

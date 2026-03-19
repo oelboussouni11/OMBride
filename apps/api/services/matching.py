@@ -116,6 +116,7 @@ async def offer_ride_to_driver(
     ride_id: UUID, driver: Driver, ride: Ride,
     pickup_lng: float = 0, pickup_lat: float = 0,
     dropoff_lng: float = 0, dropoff_lat: float = 0,
+    rider_phone: str | None = None,
 ) -> bool:
     """Send a ride offer to a driver via WebSocket and wait for acceptance."""
     event = asyncio.Event()
@@ -137,6 +138,7 @@ async def offer_ride_to_driver(
                 "fare": float(ride.fare) if ride.fare else None,
                 "distance_km": float(ride.distance_km) if ride.distance_km else None,
                 "duration_min": ride.duration_min,
+                "rider_phone": rider_phone,
             },
         },
     )
@@ -198,6 +200,14 @@ async def run_matching(ride_id: UUID, pickup_lng: float, pickup_lat: float, drop
                 if ride is None or ride.status != RideStatus.requested:
                     return  # Ride was cancelled or already matched
 
+                # Get rider phone for driver to call
+                from models.user import Rider, User
+                rider_result = await db.execute(
+                    select(User).join(Rider, Rider.user_id == User.id).where(Rider.id == ride.rider_id)
+                )
+                rider_user = rider_result.scalar_one_or_none()
+                rider_phone = rider_user.phone if rider_user else None
+
                 drivers = await find_nearby_drivers(
                     db, pickup_lng, pickup_lat,
                     exclude_ids=_tried_drivers.get(key, set()),
@@ -227,7 +237,7 @@ async def run_matching(ride_id: UUID, pickup_lng: float, pickup_lat: float, drop
                     if ride.status != RideStatus.requested:
                         return
 
-                    accepted = await offer_ride_to_driver(ride_id, driver, ride, pickup_lng, pickup_lat, dropoff_lng, dropoff_lat)
+                    accepted = await offer_ride_to_driver(ride_id, driver, ride, pickup_lng, pickup_lat, dropoff_lng, dropoff_lat, rider_phone)
                     if accepted:
                         return  # Done — driver accepted
 

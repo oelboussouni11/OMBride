@@ -58,13 +58,17 @@ async def get_active_ride(
     """Get the current active ride for this user (if any).
     Returns ride + driver/rider info for state recovery on refresh.
     """
+    from datetime import datetime, timedelta, timezone as tz
+
     active_statuses = [
         RideStatus.requested, RideStatus.matched,
         RideStatus.arriving, RideStatus.in_progress,
     ]
+    ten_min_ago = datetime.now(tz.utc) - timedelta(minutes=10)
 
     ride = None
     if user.rider:
+        # Check active rides first
         result = await db.execute(
             select(Ride).where(
                 Ride.rider_id == user.rider.id,
@@ -72,6 +76,17 @@ async def get_active_ride(
             ).order_by(Ride.created_at.desc()).limit(1)
         )
         ride = result.scalar_one_or_none()
+        # If no active ride, check recently completed (unrated, last 10 min)
+        if not ride:
+            result = await db.execute(
+                select(Ride).where(
+                    Ride.rider_id == user.rider.id,
+                    Ride.status == RideStatus.completed,
+                    Ride.rating.is_(None),
+                    Ride.completed_at > ten_min_ago,
+                ).order_by(Ride.completed_at.desc()).limit(1)
+            )
+            ride = result.scalar_one_or_none()
     elif user.driver:
         result = await db.execute(
             select(Ride).where(
@@ -80,6 +95,16 @@ async def get_active_ride(
             ).order_by(Ride.created_at.desc()).limit(1)
         )
         ride = result.scalar_one_or_none()
+        if not ride:
+            result = await db.execute(
+                select(Ride).where(
+                    Ride.driver_id == user.driver.id,
+                    Ride.status == RideStatus.completed,
+                    Ride.rider_rating.is_(None),
+                    Ride.completed_at > ten_min_ago,
+                ).order_by(Ride.completed_at.desc()).limit(1)
+            )
+            ride = result.scalar_one_or_none()
 
     if ride is None:
         return {"ride": None}
