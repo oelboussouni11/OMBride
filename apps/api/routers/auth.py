@@ -39,8 +39,14 @@ def _build_user_response(user: User) -> UserResponse:
         driver_info = DriverInfo(
             driver_id=user.driver.id,
             vehicle_model=user.driver.vehicle_model,
+            vehicle_brand=user.driver.vehicle_brand,
+            vehicle_color=user.driver.vehicle_color,
+            vehicle_year=user.driver.vehicle_year,
             plate_number=user.driver.plate_number,
+            full_name=user.driver.full_name,
+            licence_number=user.driver.licence_number,
             status=user.driver.status,
+            rejection_note=user.driver.rejection_note,
             credit_balance=float(user.driver.credit_balance),
         )
     return UserResponse(

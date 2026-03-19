@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 import { fetchDrivers, type DriverListItem } from "@/lib/api";
 import {
   Users,
@@ -26,6 +27,7 @@ import {
   CreditCard,
   UserCheck,
   Filter,
+  Search,
 } from "lucide-react";
 
 const statusVariant: Record<string, "success" | "warning" | "destructive"> = {
@@ -52,14 +54,15 @@ const filterIcons: Record<string, typeof Users> = {
 export default function DriversPage() {
   const [drivers, setDrivers] = useState<DriverListItem[]>([]);
   const [filter, setFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetchDrivers(filter === "all" ? undefined : filter)
+    fetchDrivers(filter === "all" ? undefined : filter, search || undefined)
       .then(setDrivers)
       .finally(() => setLoading(false));
-  }, [filter]);
+  }, [filter, search]);
 
   return (
     <div className="space-y-8">
@@ -71,6 +74,15 @@ export default function DriversPage() {
         <p className="text-sm text-zinc-500 mt-1">
           Manage and review driver accounts
         </p>
+        <div className="relative mt-3 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+          <Input
+            placeholder="Search by name, phone, or plate..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

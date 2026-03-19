@@ -11,6 +11,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     func,
@@ -78,9 +79,20 @@ class Driver(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False)
+    # Vehicle info
     vehicle_model: Mapped[str] = mapped_column(String, nullable=False)
+    vehicle_brand: Mapped[str | None] = mapped_column(String, nullable=True)
+    vehicle_color: Mapped[str | None] = mapped_column(String, nullable=True)
+    vehicle_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     plate_number: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    # Verification
+    full_name: Mapped[str | None] = mapped_column(String, nullable=True)  # Name as on licence
+    licence_number: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[DriverStatus] = mapped_column(Enum(DriverStatus), default=DriverStatus.pending)
+    rejection_note: Mapped[str | None] = mapped_column(String, nullable=True)
+    verification_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # Stores all submitted docs/info as JSON
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Operational
     is_available: Mapped[bool] = mapped_column(Boolean, default=False)
     credit_balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     current_location = mapped_column(Geometry("POINT", srid=4326), nullable=True)

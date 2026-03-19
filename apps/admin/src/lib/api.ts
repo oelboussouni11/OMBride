@@ -132,16 +132,21 @@ export interface DriverDetail {
   rides: DriverRide[];
 }
 
-export const fetchDrivers = (status?: string) =>
-  apiFetch<DriverListItem[]>(`/drivers/${status ? `?status=${status}` : ""}`);
+export const fetchDrivers = (status?: string, search?: string) => {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (search) params.set("search", search);
+  const qs = params.toString();
+  return apiFetch<DriverListItem[]>(`/drivers/${qs ? `?${qs}` : ""}`);
+};
 
 export const fetchDriver = (id: string) =>
   apiFetch<DriverDetail>(`/drivers/${id}`);
 
-export const verifyDriver = (id: string, status: string) =>
+export const verifyDriver = (id: string, status: string, note?: string) =>
   apiFetch<DriverListItem>(`/drivers/${id}/verify`, {
     method: "PUT",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, note: note || "" }),
   });
 
 export const topupDriver = (

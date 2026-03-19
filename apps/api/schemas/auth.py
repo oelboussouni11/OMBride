@@ -42,8 +42,14 @@ class TokenResponse(BaseModel):
 class DriverInfo(BaseModel):
     driver_id: UUID
     vehicle_model: str
+    vehicle_brand: str | None = None
+    vehicle_color: str | None = None
+    vehicle_year: int | None = None
     plate_number: str
+    full_name: str | None = None
+    licence_number: str | None = None
     status: DriverStatus
+    rejection_note: str | None = None
     credit_balance: float
 
     model_config = {"from_attributes": True}

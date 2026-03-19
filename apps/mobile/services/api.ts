@@ -212,6 +212,29 @@ export function requestReverification() {
   });
 }
 
+export interface VerificationData {
+  full_name: string;
+  phone: string;
+  licence_number: string;
+  vehicle_brand: string;
+  vehicle_model: string;
+  vehicle_color: string;
+  vehicle_year: number;
+  plate_number: string;
+  selfie: string;
+  licence_front: string;
+  licence_back: string;
+  car_photo: string;
+  carte_grise: string;
+}
+
+export function submitVerification(data: VerificationData) {
+  return apiFetch<{ status: string; message: string }>("/drivers/submit-verification", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 // ── User ───────────────────────────────────────────────────────────────────
 
 export function fetchMe() {

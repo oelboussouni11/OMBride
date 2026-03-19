@@ -109,6 +109,7 @@ class DriverDetailResponse(BaseModel):
 
 class VerifyDriverRequest(BaseModel):
     status: DriverStatus = Field(..., description="'verified' or 'rejected'")
+    note: str = Field(default="", description="Rejection reason (shown to driver)")
 
 
 class CreditTopupRequest(BaseModel):
