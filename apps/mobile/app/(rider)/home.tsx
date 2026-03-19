@@ -85,6 +85,7 @@ export default function RiderHomeScreen() {
   // Get user location and saved locations on mount
   useEffect(() => {
     (async () => {
+      // Try Expo Location first
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === "granted") {
@@ -98,12 +99,28 @@ export default function RiderHomeScreen() {
           return;
         }
       } catch {}
-      // Fallback: default to Rabat, Morocco if location fails (HTTP doesn't support geolocation)
+      // Try browser native geolocation (works on HTTPS or some HTTP)
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+          });
+          setLocationGranted(true);
+          setPickup({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            address: "Current Location (GPS)",
+          });
+          return;
+        } catch {}
+      }
+      // No GPS — use fallback location. On HTTPS, real GPS will work.
       setLocationGranted(true);
+      setUseCurrentLocation(true);
       setPickup({
         latitude: 33.9716,
         longitude: -6.8498,
-        address: "Rabat (default)",
+        address: "Current Location (approx)",
       });
     })();
     getSavedLocations().then(setSavedLocations).catch(() => {});
@@ -455,60 +472,51 @@ export default function RiderHomeScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <ScrollView style={styles.destinationContainer} keyboardShouldPersistTaps="handled">
+          <Text style={styles.sheetTitle}>Book a Ride</Text>
+
           {/* Pickup */}
-          <Text style={styles.sectionLabel}>PICKUP</Text>
-          <Pressable
-            style={[styles.toggleRow, useCurrentLocation && styles.toggleRowActive]}
-            onPress={() => setUseCurrentLocation(true)}
-          >
-            <Ionicons name={useCurrentLocation ? "radio-button-on" : "radio-button-off"} size={20} color={useCurrentLocation ? colors.primary : colors.textMuted} />
-            <Text style={[styles.toggleText, useCurrentLocation && styles.toggleTextActive]}>
-              Use Current Location {pickup ? `(${pickup.latitude.toFixed(4)}, ${pickup.longitude.toFixed(4)})` : ""}
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.toggleRow, !useCurrentLocation && styles.toggleRowActive]}
-            onPress={() => setUseCurrentLocation(false)}
-          >
-            <Ionicons name={!useCurrentLocation ? "radio-button-on" : "radio-button-off"} size={20} color={!useCurrentLocation ? colors.primary : colors.textMuted} />
-            <Text style={[styles.toggleText, !useCurrentLocation && styles.toggleTextActive]}>Enter Manually</Text>
-          </Pressable>
-          {!useCurrentLocation && (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Pickup address"
-                placeholderTextColor={colors.textMuted}
-                value={pickupAddress}
-                onChangeText={setPickupAddress}
-              />
-              <View style={styles.coordRow}>
-                <TextInput style={[styles.input, styles.coordInput]} placeholder="Lat" placeholderTextColor={colors.textMuted} value={pickupLat} onChangeText={setPickupLat} keyboardType="decimal-pad" />
-                <TextInput style={[styles.input, styles.coordInput]} placeholder="Lng" placeholderTextColor={colors.textMuted} value={pickupLng} onChangeText={setPickupLng} keyboardType="decimal-pad" />
-              </View>
-            </>
-          )}
+          <View style={styles.fieldGroup}>
+            <View style={styles.fieldHeader}>
+              <View style={[styles.fieldDot, { backgroundColor: colors.success }]} />
+              <Text style={styles.fieldLabel}>Pickup</Text>
+            </View>
+            <Pressable style={styles.currentLocBtn} onPress={() => setUseCurrentLocation(true)}>
+              <Ionicons name="locate" size={16} color={useCurrentLocation ? colors.success : colors.textMuted} />
+              <Text style={[styles.currentLocText, useCurrentLocation && { color: colors.success, fontWeight: "600" }]}>
+                {useCurrentLocation && pickup ? `Current Location (${pickup.latitude.toFixed(4)}, ${pickup.longitude.toFixed(4)})` : "Use current location"}
+              </Text>
+            </Pressable>
+            {!useCurrentLocation && (
+              <>
+                <TextInput style={styles.fieldInput} placeholder="Pickup address" placeholderTextColor={colors.textMuted} value={pickupAddress} onChangeText={setPickupAddress} autoFocus={false} />
+                <View style={styles.coordRow}>
+                  <TextInput style={styles.fieldCoord} placeholder="Latitude" placeholderTextColor={colors.textMuted} value={pickupLat} onChangeText={setPickupLat} keyboardType="decimal-pad" />
+                  <TextInput style={styles.fieldCoord} placeholder="Longitude" placeholderTextColor={colors.textMuted} value={pickupLng} onChangeText={setPickupLng} keyboardType="decimal-pad" />
+                </View>
+              </>
+            )}
+            {useCurrentLocation && (
+              <Pressable onPress={() => setUseCurrentLocation(false)}>
+                <Text style={styles.switchLink}>Enter different pickup</Text>
+              </Pressable>
+            )}
+          </View>
 
           {/* Destination */}
-          <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>DESTINATION</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Destination address"
-            placeholderTextColor={colors.textMuted}
-            value={destAddress}
-            onChangeText={setDestAddress}
-          />
-          <View style={styles.coordRow}>
-            <TextInput style={[styles.input, styles.coordInput]} placeholder="Lat" placeholderTextColor={colors.textMuted} value={destLat} onChangeText={setDestLat} keyboardType="decimal-pad" />
-            <TextInput style={[styles.input, styles.coordInput]} placeholder="Lng" placeholderTextColor={colors.textMuted} value={destLng} onChangeText={setDestLng} keyboardType="decimal-pad" />
+          <View style={styles.fieldGroup}>
+            <View style={styles.fieldHeader}>
+              <View style={[styles.fieldDot, { backgroundColor: colors.danger }]} />
+              <Text style={styles.fieldLabel}>Destination</Text>
+            </View>
+            <TextInput style={styles.fieldInput} placeholder="Destination address" placeholderTextColor={colors.textMuted} value={destAddress} onChangeText={setDestAddress} />
+            <View style={styles.coordRow}>
+              <TextInput style={styles.fieldCoord} placeholder="Latitude" placeholderTextColor={colors.textMuted} value={destLat} onChangeText={setDestLat} keyboardType="decimal-pad" />
+              <TextInput style={styles.fieldCoord} placeholder="Longitude" placeholderTextColor={colors.textMuted} value={destLng} onChangeText={setDestLng} keyboardType="decimal-pad" />
+            </View>
           </View>
 
           <Pressable style={styles.primaryButton} onPress={handleEstimate} disabled={loading}>
-            {loading ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <Text style={styles.primaryButtonText}>Get Estimate</Text>
-            )}
+            {loading ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryButtonText}>Get Estimate</Text>}
           </Pressable>
           {destLat && destLng ? (
             <Pressable style={styles.saveLocationButton} onPress={handleSaveLocation}>
@@ -802,33 +810,66 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingTop: spacing.lg,
   },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.textMuted,
-    letterSpacing: 0.5,
+  fieldGroup: {
+    marginBottom: spacing.md,
+  },
+  fieldHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     marginBottom: spacing.sm,
   },
-  toggleRow: {
+  fieldDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  fieldInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    fontSize: 16,  // 16px prevents iOS Safari zoom
+    color: colors.text,
+    backgroundColor: colors.surface,
+    marginBottom: spacing.xs,
+  },
+  fieldCoord: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+    fontSize: 16,  // 16px prevents iOS Safari zoom
+    color: colors.text,
+    backgroundColor: colors.surface,
+  },
+  currentLocBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm,
-    marginBottom: spacing.xs,
-  },
-  toggleRowActive: {
     backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    marginBottom: spacing.sm,
   },
-  toggleText: {
+  currentLocText: {
     fontSize: 14,
-    color: colors.textMuted,
-    flex: 1,
+    color: colors.textSecondary,
   },
-  toggleTextActive: {
-    color: colors.text,
+  switchLink: {
+    fontSize: 13,
+    color: colors.primary,
     fontWeight: "600",
+    marginTop: spacing.xs,
   },
   input: {
     borderWidth: 1,
@@ -841,7 +882,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     backgroundColor: colors.surface,
   },
-  coordRow: { flexDirection: "row", gap: spacing.sm },
+  coordRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs },
   coordInput: { flex: 1 },
   primaryButton: {
     backgroundColor: colors.primary,

@@ -19,7 +19,7 @@ DRIVER_ACCEPT_TIMEOUT = 15
 # Max drivers to try per search round
 MAX_DRIVERS_TO_TRY = 5
 # Search radius in metres
-SEARCH_RADIUS_M = 5000
+SEARCH_RADIUS_M = 50000  # 50km for dev/testing, reduce for production
 # Total time to keep searching before giving up (seconds)
 MAX_SEARCH_TIME = 90
 # Pause between search rounds when no drivers found (seconds)

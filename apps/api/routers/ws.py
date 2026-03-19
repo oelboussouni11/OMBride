@@ -22,7 +22,7 @@ settings = get_settings()
 router = APIRouter(tags=["websocket"])
 
 # Batch interval for writing driver locations to PostgreSQL (seconds)
-PG_LOCATION_FLUSH_INTERVAL = 30
+PG_LOCATION_FLUSH_INTERVAL = 5  # Write to DB every 5s for faster matching
 PING_INTERVAL = 30
 REDIS_LOCATION_KEY = "drivers:locations"
 
@@ -87,7 +87,6 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
     await driver_manager.connect(user_id, ws)
 
     redis = await get_redis()
-    last_pg_flush = 0  # Force immediate first write to PostgreSQL
 
     try:
         while True:
@@ -127,23 +126,20 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
                 # Forward to rider if driver has an active ride
                 await forward_driver_location_to_rider(actual_driver_id, lat, lng)
 
-                # Update location + mark available in PostgreSQL
-                now = time.monotonic()
-                if now - last_pg_flush >= PG_LOCATION_FLUSH_INTERVAL:
-                    last_pg_flush = now
-                    async with get_session_factory()() as db:
-                        await db.execute(
-                            update(Driver)
-                            .where(Driver.id == actual_driver_id)
-                            .values(
-                                current_location=f"SRID=4326;POINT({lng} {lat})",
-                                is_available=True,
-                                location_updated_at=__import__("datetime").datetime.now(
-                                    __import__("datetime").timezone.utc
-                                ),
-                            )
+                # Update location + mark available in PostgreSQL on every update
+                async with get_session_factory()() as db:
+                    await db.execute(
+                        update(Driver)
+                        .where(Driver.id == actual_driver_id)
+                        .values(
+                            current_location=f"SRID=4326;POINT({lng} {lat})",
+                            is_available=True,
+                            location_updated_at=__import__("datetime").datetime.now(
+                                __import__("datetime").timezone.utc
+                            ),
                         )
-                        await db.commit()
+                    )
+                    await db.commit()
 
     except WebSocketDisconnect:
         pass

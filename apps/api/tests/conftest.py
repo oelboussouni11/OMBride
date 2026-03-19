@@ -51,6 +51,7 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    services.matching._matching_disabled = False  # Reset for live server
     await database._engine.dispose()
     database._engine = None
     database._session_factory = None

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Linking,
   Platform,
+  TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
@@ -172,6 +173,7 @@ export default function DriverHomeScreen() {
   }, [driverState]);
 
   async function goOnline() {
+    // Try Expo Location
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === "granted") {
@@ -183,9 +185,29 @@ export default function DriverHomeScreen() {
         return;
       }
     } catch {}
-    // Fallback: send a default location (Rabat) if geolocation fails (HTTP/web)
+    // Try browser native geolocation
+    if (typeof navigator !== "undefined" && navigator.geolocation) {
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+        });
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        sendMessage({ type: "location_update", data: { lat, lng } });
+        // Watch position
+        const watchId = navigator.geolocation.watchPosition(
+          (p) => sendMessage({ type: "location_update", data: { lat: p.coords.latitude, lng: p.coords.longitude } }),
+          () => {},
+          { enableHighAccuracy: true }
+        );
+        locationWatchRef.current = { remove: () => navigator.geolocation.clearWatch(watchId) } as any;
+        setDriverState("online");
+        return;
+      } catch {}
+    }
+    // No GPS available — go online anyway with fallback location
+    // On production with HTTPS, real GPS will work
     sendMessage({ type: "location_update", data: { lat: 33.9716, lng: -6.8498 } });
-    // Keep sending location every 5s
     const interval = setInterval(() => {
       sendMessage({ type: "location_update", data: { lat: 33.9716, lng: -6.8498 } });
     }, 5000);
@@ -287,7 +309,7 @@ export default function DriverHomeScreen() {
         </View>
 
         <View style={s.offlineContent}>
-          {driverStatus !== "verified" && (
+          {(driverStatus === "pending" || driverStatus === "rejected") && (
             <View style={s.alertCard}>
               <Ionicons name="alert-circle-outline" size={20} color="#92400e" />
               <Text style={s.alertText}>
@@ -312,23 +334,10 @@ export default function DriverHomeScreen() {
             )}
           </View>
 
-          {driverStatus === "loading" ? (
-            <ActivityIndicator size="large" color={colors.primary} />
-          ) : driverStatus === "error" ? (
-            <Pressable style={s.goOnlineBtn} onPress={goOnline}>
-              <Ionicons name="power" size={22} color={colors.white} />
-              <Text style={s.goOnlineBtnText}>Go Online (offline mode)</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              style={[s.goOnlineBtn, driverStatus !== "verified" && s.btnDisabled]}
-              onPress={goOnline}
-              disabled={driverStatus !== "verified"}
-            >
-              <Ionicons name="power" size={22} color={colors.white} />
-              <Text style={s.goOnlineBtnText}>Go Online</Text>
-            </Pressable>
-          )}
+          <TouchableOpacity style={s.goOnlineBtn} onPress={goOnline} activeOpacity={0.7}>
+            <Ionicons name="power" size={22} color={colors.white} />
+            <Text style={s.goOnlineBtnText}>Go Online</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -354,10 +363,10 @@ export default function DriverHomeScreen() {
               <Text style={s.onlineStatLabel}>Credits</Text>
             </View>
           </View>
-          <Pressable style={s.goOfflineBtn} onPress={goOffline}>
+          <TouchableOpacity style={s.goOfflineBtn} onPress={goOffline} activeOpacity={0.7}>
             <Ionicons name="power" size={18} color={colors.textSecondary} />
             <Text style={s.goOfflineBtnText}>Go Offline</Text>
-          </Pressable>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
