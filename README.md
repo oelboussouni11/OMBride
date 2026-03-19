@@ -86,87 +86,141 @@ npx expo start
 const localhost = "http://YOUR_IP:8000";
 ```
 
-## Features
+---
+
+## What Was Done
 
 ### Rider App
-
-- **Registration** — phone + password, everyone starts as rider
-- **Ride booking** — enter pickup (current location or manual) + destination with coordinates, fare estimate before requesting
-- **Saved locations** — save Home, Work, etc. with quick access from home screen
-- **Real-time tracking** — see driver info (name, vehicle, plate, rating), status updates (matched, arriving, in progress)
-- **Driver contact** — call driver directly during ride
-- **Ride completion** — fare summary with 5-star driver rating
-- **Ride history** — filterable by time (today/week/month) and status (completed/cancelled), with summary stats
-- **Profile** — ride count, score, average rating, editable email
-- **Cancel logic** — free cancel while searching, confirmation dialog when driver assigned, no cancel during ride
-- **State recovery** — ride state persists across page refresh via polling + active ride API
+- Registration (phone + password, everyone starts as rider)
+- Ride booking with pickup (current location or manual coordinates) + destination
+- Fare estimate before requesting (distance, duration, fare)
+- Saved locations (Home, Work, etc.) with quick access
+- Real-time ride tracking via WebSocket + polling fallback
+- Driver info display during ride (name, vehicle, plate, rating)
+- Call driver button during ride
+- 5-star driver rating after ride completion
+- Ride history with time filters (Today/Week/Month) and status filters (Completed/Cancelled)
+- Summary stats (rides, cancelled, total spent)
+- Profile with ride count, score, rating, editable email
+- Cancel logic: free while searching, confirmation when driver assigned, blocked during ride
+- State recovery on page refresh (active ride API + visibility change listener)
 
 ### Driver App
-
-- **Verification** — collapsible form to upload selfie, car photo, matricule, carte grise, driving licence. Name/phone required. All info locked after verification.
-- **Go online/offline** — real-time location sharing via WebSocket, explicit go_offline message
-- **Ride offers** — 15-second countdown with progress bar, pickup/dropoff coordinates, fare/distance/duration
-- **Ride flow** — accept, navigate to pickup (Waze with real coordinates), arrived, start ride, complete ride, rate rider
-- **Driver cancel** — available after 4 minutes of waiting, with confirmation dialog and score impact warning
-- **Call rider** — direct phone call during navigating and in-ride states
-- **Earnings** — credit balance card, transaction history filterable by time and type (earned/commission/top-up)
-- **Top-up** — request credit top-up with proof of payment (receipt/reference), admin approval required
-- **Settings** — ride count, score, rating with stars, verification status badge, vehicle info (locked when verified), request info change
-- **Notifications** — toast overlay for ride requests and cancellations on any tab
+- Verification flow: collapsible form with selfie, car photo, matricule, carte grise, driving licence upload
+- Verified info locked (name, phone, vehicle) — changes require admin request
+- Go online/offline with real-time location sharing
+- Ride offers with 15-second countdown, pickup/dropoff coordinates, fare/distance/duration
+- Ride flow: accept, navigate (Waze with real coordinates), arrived, start, complete, rate rider
+- Call rider button during navigating and in-ride
+- Driver cancel after 4-minute wait with confirmation and score warning
+- Earnings screen with credit balance, filterable transaction history (time + type)
+- Credit top-up with amount, payment method, receipt photo upload, reference text
+- Toast notifications for ride requests and cancellations on any tab
+- Settings: ride count, score, rating with stars, verification status badge
+- State recovery on refresh
 
 ### Admin Dashboard
-
-- **Dashboard** — ride stats (today/week/month), revenue, active drivers, recent rides table with colored status badges
-- **Fare & Matching** — configure fare parameters + driver matching weights with live formula preview
-- **Commission** — toggle between fixed (DH) or percentage (%) with calculation preview
-- **Driver management** — list with avatar, status badges, verify/reject, view documents, credit management
-- **Rider management** — list with ride counts
-- **Ride monitoring** — all rides with status filter tabs, colorful status pills, contextual icons
-- **Credit management** — approve/reject top-up requests
+- Dashboard with ride stats (today/week/month), revenue, active drivers, recent rides
+- Fare & Matching configuration with live formula preview
+- Commission: toggle between fixed (DH) or percentage (%) with calculation preview
+- Driver management: list with avatars, status badges, verify/reject, documents, credits
+- Rider management: list with ride counts
+- Ride monitoring: all rides with status filter tabs, colorful status pills
+- Credit management: approve/reject top-up requests
+- Colored stat cards, icons, alternating table rows, loading/empty states
 
 ### Matching System
-
-- Searches for nearby drivers (50km dev / 5km production) for up to 90 seconds
-- Retries every 5 seconds — driver can come online during active search
+- Searches nearby drivers (50km dev / 5km production) for up to 90 seconds
+- Retries every 5 seconds — driver can come online during search
 - Weighted formula: `score = (avg_rating * weight_rating) - (distance_km * weight_distance)`
-- Weights configurable by admin in real-time via dashboard
-- Cascades offers to multiple drivers — if one declines/times out, offers to next best
-- Tracks tried drivers to avoid re-offering in same search session
-- Ride offer includes pickup/dropoff coordinates, fare, distance, duration, rider phone
+- Admin-configurable weights in real-time
+- Cascades offers to multiple drivers, tracks tried drivers
+- Includes pickup/dropoff coordinates, fare, distance, duration, rider phone in offer
 
 ### Commission System
-
-- **Fixed**: flat DH amount per ride (e.g. 1.00 DH)
-- **Percentage**: % of ride fare (e.g. 10% of a 50 DH ride = 5 DH)
-- Admin configurable, deducted from driver credit balance on ride completion
+- Fixed (DH) or Percentage (%) of ride fare
 - Two transactions per ride: "Ride Earned" (positive) + "Commission" (negative)
-- Drivers must maintain positive credit balance to accept rides
-- Top-up via bank transfer or cash with proof of payment, admin approves
+- Drivers must maintain positive credit balance
+- Top-up with receipt photo upload, admin approval required
 
 ### Score & Rating
-
-- **Rating**: riders rate drivers (1-5 stars) after ride completion, drivers rate riders
-- **Score**: 1.0 to 5.0, penalized by cancellation ratio: `score = 5.0 - (cancel_ratio * 4.0)`
-- Score and rating visible on profile settings, used in driver matching priority
-- Driver rating shown to rider during ride (in driver card)
+- Riders rate drivers (1-5 stars), drivers rate riders
+- Score: `5.0 - (cancel_ratio * 4.0)` — penalizes cancellations
+- Driver rating shown during ride, used in matching priority
 
 ### Real-time Communication
+- WebSocket for drivers (location, ride offers, cancellations)
+- WebSocket for riders (ride status, driver location, search updates)
+- WebSocket for admin (live stats)
+- Auto-reconnect, ping/pong keep-alive
+- Toast notifications on all tabs
+- Polling fallback every 3 seconds
+- Visibility change listener for instant recovery
 
-- `/ws/driver/{id}` — driver sends location updates + go_offline, receives ride offers + cancellations
-- `/ws/rider/{id}` — rider receives ride status, driver location, search updates
-- `/ws/admin` — admin receives live stats and ride events
-- Auto-reconnect every 3 seconds on disconnect
-- Ping/pong keep-alive every 30 seconds
-- Toast notifications for ride requests and cancellations (visible on all tabs)
-- Polling fallback every 3 seconds when WebSocket messages are missed
-- Visibility change listener for instant state recovery when returning to app
+### Testing
+- 42 integration tests covering all endpoints and business scenarios
+- Auth, rides, credits, saved locations, complex workflows
+- Run: `cd apps/api && python -m pytest tests/ -v`
 
-### State Recovery
+---
 
-- `GET /rides/active` returns current in-progress or recently completed unrated ride
-- Both rider and driver fetch active ride on mount — survives page refresh
-- Polling every 3s during active ride ensures no status change is missed
-- Completed unrated rides shown for 10 minutes for rating
+## What's Missing (Roadmap)
+
+### P0 — Required for Production
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| HTTPS / SSL | Not done | GPS requires HTTPS. Deploy behind nginx + Let's Encrypt or use cloud with SSL |
+| Map integration | Not done | Google Places / Mapbox autocomplete for address search, map view with pins |
+| Push notifications | Not done | Firebase Cloud Messaging for ride offers, status updates when app is closed |
+| Payment gateway | Not done | Stripe / CMI (Morocco) for online payment, in-app wallet |
+| Receipt image upload to cloud | Not done | Currently stored as local URI. Need S3 / Cloudinary for receipt photos |
+| Native build | Not done | Expo dev build for real GPS, push notifications, background location |
+| Phone/OTP verification | Not done | Verify phone number with SMS OTP on registration |
+| Database migrations | Partial | Schema changes done via raw SQL. Need proper Alembic migrations |
+
+### P1 — Important
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Address geocoding | Not done | Convert text addresses to coordinates (Google/Mapbox Geocoding API) |
+| Profile photo storage | Not done | Upload selfie/documents to cloud storage |
+| Ride receipt | Not done | Email/SMS receipt after ride completion |
+| Admin notifications | Not done | Notify driver when verified/rejected |
+| Rate limiting | Not done | API rate limiting to prevent abuse |
+| Password reset | Not done | Forgot password flow via SMS/email |
+| Input validation | Partial | Coordinate validation on frontend, need more robust server-side |
+| Error monitoring | Not done | Sentry or similar for crash/error tracking |
+
+### P2 — Nice to Have
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| Dark mode | Not done | Theme toggle in app settings |
+| Multi-language | Not done | Arabic / French / English support |
+| Ride scheduling | Not done | Book a ride for a future time |
+| Promo codes | Not done | Discount / coupon system |
+| Driver earnings analytics | Not done | Charts and graphs in earnings tab |
+| Admin analytics | Not done | Recharts dashboards for trends |
+| CI/CD pipeline | Not done | GitHub Actions for automated tests + deployment |
+| Docker production | Not done | Dockerfiles for API + admin + nginx |
+| Ride ETA updates | Not done | Real-time ETA recalculation during ride |
+| In-app chat | Not done | Driver-rider messaging |
+
+### P3 — Future
+
+| Feature | Description |
+|---------|-------------|
+| Surge pricing | Dynamic fare based on demand |
+| Multiple vehicle types | Economy, comfort, premium |
+| Ride sharing / carpool | Share rides with other passengers |
+| Driver incentives | Bonuses for peak hours, high ratings |
+| Referral system | Invite friends, earn credits |
+| Admin roles | Super admin, support agent, finance |
+| Audit log | Track all admin actions |
+| Data export | CSV/PDF reports for finance |
+
+---
 
 ## Database Schema
 
@@ -193,52 +247,31 @@ const localhost = "http://YOUR_IP:8000";
 ### Rides
 - `POST /rides/estimate` — fare estimate (distance, duration, fare)
 - `POST /rides/request` — request a ride (triggers background matching)
-- `GET /rides/active` — get current active or recently completed ride (state recovery)
-- `GET /rides/history` — ride history for current user (rider or driver)
+- `GET /rides/active` — get current active or recently completed ride
+- `GET /rides/history` — ride history for current user
 - `POST /rides/{id}/accept` — verified driver accepts ride
 - `POST /rides/{id}/arriving` — driver signals arrival at pickup
 - `POST /rides/{id}/start` — driver starts the ride
-- `POST /rides/{id}/complete` — driver completes ride (deducts commission, creates transactions)
+- `POST /rides/{id}/complete` — complete ride (commission deducted, transactions created)
 - `POST /rides/{id}/cancel` — rider or driver cancels ride
-- `POST /rides/{id}/rate` — rate completed ride (1-5, rider rates driver or driver rates rider)
+- `POST /rides/{id}/rate` — rate completed ride (1-5)
 
 ### Credits
 - `GET /credits/` — transaction history for current driver
-- `POST /credits/topup` — request top-up with amount, payment method, proof of payment
+- `POST /credits/topup` — request top-up with amount, payment method, receipt
 
 ### Riders
 - `GET /riders/saved-locations` — list saved places
-- `POST /riders/saved-locations` — add/update saved place (replaces by label)
+- `POST /riders/saved-locations` — add/update saved place
 - `DELETE /riders/saved-locations/{label}` — remove saved place
 
 ### Admin
 - `GET /admin/dashboard` — stats + recent rides
-- `GET /admin/fare-config` — current fare configuration
-- `PUT /admin/fare-config` — update fare parameters + matching weights + commission type
-- `GET /admin/drivers` — list drivers with optional status filter
-- `GET /admin/drivers/{id}` — driver detail with documents, transactions, rides
-- `PUT /admin/drivers/{id}/verify` — verify or reject driver
+- `GET/PUT /admin/fare-config` — fare parameters + matching weights + commission
+- `GET /admin/drivers` — list drivers
+- `GET /admin/drivers/{id}` — driver detail
+- `PUT /admin/drivers/{id}/verify` — verify/reject driver
 - `POST /admin/drivers/{id}/credit` — approve credit top-up
-
-## Testing
-
-42 integration tests covering all API endpoints and business scenarios:
-
-```bash
-cd apps/api
-source venv/bin/activate
-python -m pytest tests/ -v
-```
-
-### Test Coverage
-
-| File | Tests | Covers |
-|------|-------|--------|
-| test_auth.py | 9 | Register, duplicate phone, admin forbidden, login, wrong password, me, stats, unauthorized |
-| test_rides.py | 12 | Estimate, request, accept, full ride flow, cancel, cancel completed, rate, invalid rating, history, active ride, state transitions |
-| test_credits.py | 5 | List, topup, topup without ref, commission on complete, rider forbidden |
-| test_saved_locations.py | 5 | Get empty, add, add multiple, update by label, delete |
-| test_scenarios.py | 11 | Multiple rides same rider, cancel then new ride, driver cancel, score decrease, commission percentage, double accept, skip arriving, active completed unrated, history order, driver needs vehicle, unverified cannot accept |
 
 ## Environment Variables
 
@@ -262,14 +295,21 @@ Password for all: `pass1234`
 | Driver | 0633333333 | Karim Alami | Verified, 100 DH |
 | Driver | 0644444444 | Hassan Radi | Pending |
 
+## Testing
+
+```bash
+cd apps/api && source venv/bin/activate
+python -m pytest tests/ -v
+# 42 passed in ~25s
+```
+
 ## Phone Testing
 
-Both phones must be on the same WiFi as the development machine.
+1. Both phones on same WiFi as dev machine
+2. Update `apps/mobile/constants/api.ts` with your IP
+3. Start API with `--host 0.0.0.0`
+4. Start Expo with `npx expo start --web`
+5. Open `http://YOUR_IP:8081` in Safari on both phones
+6. Rider on phone 1, driver on phone 2
 
-1. Update `apps/mobile/constants/api.ts` with your IP (`ipconfig getifaddr en0`)
-2. Start the API with `--host 0.0.0.0`
-3. Start Expo with `npx expo start --web`
-4. Open `http://YOUR_IP:8081` in Safari on both phones
-5. Login as rider on one phone, driver on the other
-
-**Note**: GPS requires HTTPS. On HTTP, both phones use fallback coordinates. For production, deploy with SSL.
+**Note**: GPS requires HTTPS. On HTTP, fallback coordinates are used. Deploy with SSL for production.
