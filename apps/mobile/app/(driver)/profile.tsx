@@ -8,6 +8,7 @@ import {
   Alert,
   Image,
   TextInput,
+  ActivityIndicator,
   LayoutAnimation,
   Platform,
   UIManager,
@@ -64,18 +65,21 @@ export default function DriverProfileScreen() {
   const [verificationOpen, setVerificationOpen] = useState(false);
   const [editingEmail, setEditingEmail] = useState(false);
   const [editEmail, setEditEmail] = useState(user?.email || "");
+  const [pageLoading, setPageLoading] = useState(true);
 
   // Verification text fields
   const [vehName, setVehName] = useState("");
   const [vehPhone, setVehPhone] = useState("");
 
   useEffect(() => {
-    fetchMe().then((me) => {
-      setDriverInfo(me.driver);
-      setVehName(me.name || "");
-      setVehPhone(me.phone || "");
-    }).catch(() => {});
-    fetchStats().then(setStats).catch(() => {});
+    Promise.all([
+      fetchMe().then((me) => {
+        setDriverInfo(me.driver);
+        setVehName(me.name || "");
+        setVehPhone(me.phone || "");
+      }),
+      fetchStats().then(setStats),
+    ]).catch(() => {}).finally(() => setPageLoading(false));
   }, []);
 
   async function pickImage(index: number) {
@@ -154,6 +158,14 @@ export default function DriverProfileScreen() {
   const verificationBg = isVerified ? "#dcfce7" : isRejected ? "#fef2f2" : "#fef3c7";
 
   const uploadedCount = docs.filter((d) => d.uri !== null).length;
+
+  if (pageLoading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>

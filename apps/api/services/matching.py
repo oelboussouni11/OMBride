@@ -23,7 +23,7 @@ SEARCH_RADIUS_M = 5000
 # Total time to keep searching before giving up (seconds)
 MAX_SEARCH_TIME = 90
 # Pause between search rounds when no drivers found (seconds)
-SEARCH_RETRY_INTERVAL = 10
+SEARCH_RETRY_INTERVAL = 5
 
 # In-memory tracking of pending ride offers: ride_id -> asyncio.Event
 _pending_accepts: dict[str, asyncio.Event] = {}

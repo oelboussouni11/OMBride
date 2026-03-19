@@ -87,7 +87,7 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
     await driver_manager.connect(user_id, ws)
 
     redis = await get_redis()
-    last_pg_flush = time.monotonic()
+    last_pg_flush = 0  # Force immediate first write to PostgreSQL
 
     try:
         while True:
@@ -104,6 +104,14 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
                 continue
 
             if msg.get("type") == "pong":
+                continue
+
+            if msg.get("type") == "go_offline":
+                async with get_session_factory()() as db:
+                    await db.execute(
+                        update(Driver).where(Driver.id == actual_driver_id).values(is_available=False)
+                    )
+                    await db.commit()
                 continue
 
             if msg.get("type") == "location_update":

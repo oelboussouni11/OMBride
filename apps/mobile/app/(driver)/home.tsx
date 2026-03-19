@@ -13,7 +13,7 @@ import * as Location from "expo-location";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAuth } from "../../context/AuthContext";
 import { useWebSocket } from "../../context/WebSocketContext";
-import { acceptRide, arrivingRide, startRide, completeRide, fetchMe, rateRide, fetchActiveRide } from "../../services/api";
+import { acceptRide, arrivingRide, startRide, completeRide, cancelRide, fetchMe, rateRide, fetchActiveRide } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
 
 type DriverState = "offline" | "online" | "ride_offer" | "navigating_pickup" | "at_pickup" | "in_ride" | "completed";
@@ -24,7 +24,7 @@ export default function DriverHomeScreen() {
 
   const [driverState, setDriverState] = useState<DriverState>("offline");
   const [creditBalance, setCreditBalance] = useState<number>(0);
-  const [driverStatus, setDriverStatus] = useState<string>("pending");
+  const [driverStatus, setDriverStatus] = useState<string>("loading");
   const [loading, setLoading] = useState(false);
   const [rideOffer, setRideOffer] = useState<any>(null);
   const [countdown, setCountdown] = useState(15);
@@ -33,6 +33,10 @@ export default function DriverHomeScreen() {
   const [currentRide, setCurrentRide] = useState<any>(null);
   const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
   const [selectedRating, setSelectedRating] = useState(0);
+  // Cancel timer: driver can cancel after 4 min (240s) of waiting
+  const CANCEL_WAIT_SECONDS = 240;
+  const [rideElapsed, setRideElapsed] = useState(0);
+  const rideTimerRef = useRef<ReturnType<typeof setInterval>>();
 
   useEffect(() => {
     fetchMe().then((me) => {
@@ -75,8 +79,28 @@ export default function DriverHomeScreen() {
     } else if (lastMessage.type === "ride_expired") {
       setRideOffer(null);
       setDriverState("online");
+    } else if (lastMessage.type === "ride_status" && lastMessage.data.status === "cancelled") {
+      // Rider cancelled — reset to online (toast notification handled by WebSocketContext)
+      setCurrentRideId(null);
+      setCurrentRide(null);
+      setRideOffer(null);
+      setDriverState("online");
     }
   }, [lastMessage]);
+
+  // Ride elapsed timer — starts when driver accepts, enables cancel after 4 min
+  useEffect(() => {
+    if (driverState === "navigating_pickup" || driverState === "at_pickup") {
+      setRideElapsed(0);
+      rideTimerRef.current = setInterval(() => {
+        setRideElapsed((prev) => prev + 1);
+      }, 1000);
+      return () => clearInterval(rideTimerRef.current);
+    } else {
+      clearInterval(rideTimerRef.current);
+      setRideElapsed(0);
+    }
+  }, [driverState]);
 
   useEffect(() => {
     if (driverState === "ride_offer") {
@@ -103,6 +127,7 @@ export default function DriverHomeScreen() {
   function goOffline() {
     try { locationWatchRef.current?.remove(); } catch {}
     locationWatchRef.current = null;
+    sendMessage({ type: "go_offline" });
     setDriverState("offline");
   }
 
@@ -120,6 +145,37 @@ export default function DriverHomeScreen() {
   }
 
   function handleDecline() { clearInterval(countdownRef.current); setRideOffer(null); setDriverState("online"); }
+
+  async function handleDriverCancel() {
+    if (!currentRideId) return;
+    Alert.alert(
+      "Cancel Ride?",
+      "Are you sure you want to cancel this ride? This affects your score.",
+      [
+        { text: "No", style: "cancel" },
+        {
+          text: "Yes, Cancel",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await cancelRide(currentRideId);
+              setCurrentRideId(null);
+              setCurrentRide(null);
+              setDriverState("online");
+            } catch (err: any) {
+              Alert.alert("Error", err.message || "Could not cancel ride");
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  function formatTimer(seconds: number) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  }
 
   async function handleArriving() {
     if (!currentRideId) return; setLoading(true);
@@ -297,6 +353,8 @@ export default function DriverHomeScreen() {
 
   // ── NAVIGATING TO PICKUP ────────────────────────────────────────────────
   if (driverState === "navigating_pickup") {
+    const canCancel = rideElapsed >= CANCEL_WAIT_SECONDS;
+    const remaining = Math.max(0, CANCEL_WAIT_SECONDS - rideElapsed);
     return (
       <SafeAreaView style={s.container}>
         <View style={s.rideMapArea}>
@@ -308,6 +366,7 @@ export default function DriverHomeScreen() {
           <View style={s.rideStatusRow}>
             <View style={[s.rideStatusDot, { backgroundColor: colors.primary }]} />
             <Text style={s.rideStatusText}>Heading to pickup</Text>
+            <Text style={s.rideTimer}>{formatTimer(rideElapsed)}</Text>
           </View>
           <Text style={s.rideSheetAddress}>{currentRide?.pickup_address}</Text>
           {currentRide?.fare && <Text style={s.rideSheetFare}>{currentRide.fare} DH</Text>}
@@ -318,6 +377,13 @@ export default function DriverHomeScreen() {
           <Pressable style={s.rideActionBtn} onPress={handleArriving} disabled={loading}>
             {loading ? <ActivityIndicator color={colors.white} /> : <Text style={s.rideActionText}>Arrived at Pickup</Text>}
           </Pressable>
+          {canCancel ? (
+            <Pressable style={s.cancelBtn} onPress={handleDriverCancel}>
+              <Text style={s.cancelBtnText}>Cancel Ride</Text>
+            </Pressable>
+          ) : (
+            <Text style={s.cancelNote}>Cancel available in {formatTimer(remaining)}</Text>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -325,6 +391,8 @@ export default function DriverHomeScreen() {
 
   // ── AT PICKUP ───────────────────────────────────────────────────────────
   if (driverState === "at_pickup") {
+    const canCancel = rideElapsed >= CANCEL_WAIT_SECONDS;
+    const remaining = Math.max(0, CANCEL_WAIT_SECONDS - rideElapsed);
     return (
       <SafeAreaView style={s.container}>
         <View style={s.rideMapArea}>
@@ -336,11 +404,19 @@ export default function DriverHomeScreen() {
           <View style={s.rideStatusRow}>
             <View style={[s.rideStatusDot, { backgroundColor: colors.warning }]} />
             <Text style={s.rideStatusText}>Waiting for rider</Text>
+            <Text style={s.rideTimer}>{formatTimer(rideElapsed)}</Text>
           </View>
           <Text style={s.rideSheetAddress}>{currentRide?.pickup_address}</Text>
           <Pressable style={s.rideActionBtn} onPress={handleStartRide} disabled={loading}>
             {loading ? <ActivityIndicator color={colors.white} /> : <Text style={s.rideActionText}>Start Ride</Text>}
           </Pressable>
+          {canCancel ? (
+            <Pressable style={s.cancelBtn} onPress={handleDriverCancel}>
+              <Text style={s.cancelBtnText}>Cancel Ride</Text>
+            </Pressable>
+          ) : (
+            <Text style={s.cancelNote}>Cancel available in {formatTimer(remaining)}</Text>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -505,10 +581,17 @@ const s = StyleSheet.create({
     paddingVertical: 12, alignItems: "center", justifyContent: "center", gap: spacing.sm, marginBottom: spacing.sm,
   },
   wazeBtnText: { fontSize: 15, fontWeight: "600", color: colors.text },
+  rideTimer: { fontSize: 14, fontWeight: "700", color: colors.textMuted, marginLeft: "auto" },
   rideActionBtn: {
     backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 16, alignItems: "center", marginTop: spacing.xs,
   },
   rideActionText: { color: colors.white, fontSize: 16, fontWeight: "700" },
+  cancelBtn: {
+    borderWidth: 2, borderColor: colors.danger, borderRadius: radius.md,
+    paddingVertical: 12, alignItems: "center", marginTop: spacing.sm,
+  },
+  cancelBtnText: { color: colors.danger, fontSize: 15, fontWeight: "600" },
+  cancelNote: { fontSize: 12, color: colors.textMuted, textAlign: "center", marginTop: spacing.sm },
 
   // Completed
   completedContent: { flex: 1, justifyContent: "center", alignItems: "center", padding: spacing.lg },

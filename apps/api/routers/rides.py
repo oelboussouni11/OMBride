@@ -549,13 +549,13 @@ async def cancel_ride(
 
     # Notify the other party
     if is_rider and ride.driver_id:
-        # Find driver's user_id
+        # Notify driver that rider cancelled
         driver_result = await db.execute(select(Driver).where(Driver.id == ride.driver_id))
         driver = driver_result.scalar_one_or_none()
         if driver:
-            await rider_manager.send(
+            await driver_manager.send(
                 driver.user_id,
-                {"type": "ride_status", "data": {"ride_id": str(ride_id), "status": "cancelled"}},
+                {"type": "ride_status", "data": {"ride_id": str(ride_id), "status": "cancelled", "reason": "rider_cancelled"}},
             )
     if is_driver:
         await rider_manager.send(

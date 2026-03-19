@@ -47,7 +47,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── JWT helpers ──────────────────────────────────────────────────────────────
 
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours for dev
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 

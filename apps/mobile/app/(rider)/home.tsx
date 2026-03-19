@@ -47,6 +47,9 @@ export default function RiderHomeScreen() {
   const [selectedRating, setSelectedRating] = useState(0);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
+  // Active ride ID — use ref to avoid stale closures in cancel handler
+  const activeRideIdRef = useRef<string | null>(null);
+
   // Driver info from WS
   const [driverInfo, setDriverInfo] = useState<any>(null);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -73,6 +76,7 @@ export default function RiderHomeScreen() {
     fetchActiveRide().then((data) => {
       if (data.ride) {
         const r = data.ride;
+        setActiveRideId(r.id);
         setCurrentRide({
           id: r.id,
           riderId: r.rider_id,
@@ -159,6 +163,7 @@ export default function RiderHomeScreen() {
     setRideState("idle");
     setEstimate(null);
     setCurrentRide(null);
+    activeRideIdRef.current = null;
     setDriverInfo(null);
     setDriverLocation(null);
     setDestAddress("");
@@ -207,6 +212,7 @@ export default function RiderHomeScreen() {
         pickup_address: pickup.address || "Pickup",
         dropoff_address: dropoff.address || "Destination",
       });
+      activeRideIdRef.current = ride.id;
       setCurrentRide({
         id: ride.id,
         riderId: ride.rider_id,
@@ -229,16 +235,16 @@ export default function RiderHomeScreen() {
   }
 
   async function handleCancel() {
-    if (!currentRide) {
+    const rideId = currentRide?.id || activeRideIdRef.current;
+    if (!rideId) {
       resetRide();
       return;
     }
     try {
-      await cancelRide(currentRide.id);
+      await cancelRide(rideId);
       resetRide();
     } catch (err: any) {
       Alert.alert("Error", err.message || "Could not cancel ride");
-      // Don't reset — ride is still active on backend
     }
   }
 
@@ -295,14 +301,19 @@ export default function RiderHomeScreen() {
 
   function confirmCancel() {
     if (rideState === "matched" || rideState === "arriving") {
-      Alert.alert(
-        "Cancel ride?",
-        "Your driver is already on the way. Are you sure?",
-        [
-          { text: "No", style: "cancel" },
-          { text: "Yes, cancel", style: "destructive", onPress: handleCancel },
-        ]
-      );
+      if (Platform.OS === "web") {
+        const ok = window.confirm("Your driver is already on the way. Cancel ride?");
+        if (ok) handleCancel();
+      } else {
+        Alert.alert(
+          "Cancel ride?",
+          "Your driver is already on the way. Are you sure?",
+          [
+            { text: "No", style: "cancel" },
+            { text: "Yes, cancel", style: "destructive", onPress: handleCancel },
+          ]
+        );
+      }
     } else {
       handleCancel();
     }
