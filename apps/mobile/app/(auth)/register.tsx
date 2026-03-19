@@ -3,200 +3,216 @@ import {
   View,
   Text,
   TextInput,
-  Pressable,
+  TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { useAuth } from "../../context/AuthContext";
+import { colors, spacing, radius } from "../../constants/theme";
 
 export default function RegisterScreen() {
   const { register } = useAuth();
   const router = useRouter();
-  const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"rider" | "driver">("rider");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   async function handleRegister() {
-    if (!phone || !name || !password) {
-      Alert.alert("Error", "Please fill in all fields");
+    setError("");
+    if (!name || !phone || !password) {
+      setError("Please fill in all fields");
       return;
     }
     setLoading(true);
     try {
-      await register({ phone, name, password, role });
+      await register({ phone, name, password, role: "rider" });
+      router.replace("/");
     } catch (err: any) {
-      Alert.alert("Registration Failed", err.message ?? "Something went wrong");
+      setError(err.message ?? "Something went wrong");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Create Account</Text>
-      <Text style={styles.subtitle}>Join omb today</Text>
+    <KeyboardAvoidingView
+      style={styles.wrapper}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.logoBadge}>
+            <Text style={styles.logoText}>omb</Text>
+          </View>
+          <Text style={styles.title}>Create account</Text>
+          <Text style={styles.subtitle}>Get started with omb</Text>
+        </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Full name"
-        value={name}
-        onChangeText={setName}
-        autoCapitalize="words"
-      />
+        <View style={styles.form}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Full name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Your full name"
+              placeholderTextColor={colors.textMuted}
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+            />
+          </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Phone number"
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
-        autoCapitalize="none"
-      />
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Phone number</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="0600000000"
+              placeholderTextColor={colors.textMuted}
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+            />
+          </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Choose a password"
+              placeholderTextColor={colors.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+          </View>
 
-      <Text style={styles.roleLabel}>I want to:</Text>
-      <View style={styles.roleRow}>
-        <Pressable
-          style={[styles.roleButton, role === "rider" && styles.roleButtonActive]}
-          onPress={() => setRole("rider")}
-        >
-          <Text
-            style={[styles.roleText, role === "rider" && styles.roleTextActive]}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleRegister}
+            disabled={loading}
+            activeOpacity={0.8}
           >
-            Ride
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.roleButton, role === "driver" && styles.roleButtonActive]}
-          onPress={() => setRole("driver")}
-        >
-          <Text
-            style={[styles.roleText, role === "driver" && styles.roleTextActive]}
-          >
-            Drive
-          </Text>
-        </Pressable>
+            {loading ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <Text style={styles.buttonText}>Create Account</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <Link href="/(auth)/login" asChild>
+          <TouchableOpacity style={styles.linkButton}>
+            <Text style={styles.linkText}>
+              Already have an account?{" "}
+              <Text style={styles.linkBold}>Sign In</Text>
+            </Text>
+          </TouchableOpacity>
+        </Link>
       </View>
-
-      <Pressable
-        style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleRegister}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Create Account</Text>
-        )}
-      </Pressable>
-
-      <Link href="/(auth)/login" asChild>
-        <Pressable style={styles.linkButton}>
-          <Text style={styles.linkText}>
-            Already have an account? <Text style={styles.linkBold}>Sign In</Text>
-          </Text>
-        </Pressable>
-      </Link>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
     flex: 1,
     justifyContent: "center",
-    paddingHorizontal: 24,
-    backgroundColor: "#fff",
+    paddingHorizontal: spacing.lg,
+  },
+  header: {
+    alignItems: "center",
+    marginBottom: spacing.xl,
+  },
+  logoBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  logoText: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: colors.white,
+    letterSpacing: -0.5,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 8,
-    color: "#111",
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 16,
-    textAlign: "center",
-    marginBottom: 32,
-    color: "#666",
+    fontSize: 15,
+    color: colors.textSecondary,
+  },
+  form: {
+    backgroundColor: colors.background,
+    gap: spacing.md,
+  },
+  inputGroup: {
+    gap: spacing.xs + 2,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
     fontSize: 16,
-    marginBottom: 16,
-    backgroundColor: "#f9f9f9",
+    backgroundColor: colors.surface,
+    color: colors.text,
   },
-  roleLabel: {
+  errorText: {
+    color: colors.danger,
     fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  roleRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 24,
-  },
-  roleButton: {
-    flex: 1,
-    borderWidth: 2,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  roleButtonActive: {
-    borderColor: "#18181b",
-    backgroundColor: "#f4f4f5",
-  },
-  roleText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#999",
-  },
-  roleTextActive: {
-    color: "#18181b",
+    textAlign: "center",
   },
   button: {
-    backgroundColor: "#18181b",
-    borderRadius: 8,
-    paddingVertical: 14,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingVertical: 16,
     alignItems: "center",
+    marginTop: spacing.sm,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    color: "#fff",
+    color: colors.white,
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   linkButton: {
-    marginTop: 24,
+    marginTop: spacing.xl,
     alignItems: "center",
   },
   linkText: {
     fontSize: 14,
-    color: "#666",
+    color: colors.textSecondary,
   },
   linkBold: {
-    color: "#18181b",
-    fontWeight: "600",
+    color: colors.primary,
+    fontWeight: "700",
   },
 });

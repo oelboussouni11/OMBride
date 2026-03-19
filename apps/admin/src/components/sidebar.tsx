@@ -8,17 +8,17 @@ import {
   Users,
   Route,
   CreditCard,
-  Settings,
+  SlidersHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/settings/fare", label: "Fare & Matching", icon: SlidersHorizontal },
   { href: "/drivers", label: "Drivers", icon: Car },
   { href: "/riders", label: "Riders", icon: Users },
   { href: "/rides", label: "Rides", icon: Route },
   { href: "/credits", label: "Credits", icon: CreditCard },
-  { href: "/settings/fare", label: "Fare Config", icon: Settings },
 ];
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {

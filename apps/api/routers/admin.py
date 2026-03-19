@@ -150,6 +150,9 @@ async def update_fare_config(
         booking_fee=body.booking_fee,
         minimum_fare=body.minimum_fare,
         commission_per_ride=body.commission_per_ride,
+        commission_type=body.commission_type,
+        weight_rating=body.weight_rating,
+        weight_distance=body.weight_distance,
         is_active=True,
         updated_by=admin.id,
     )

@@ -158,6 +158,9 @@ class FareConfigResponse(BaseModel):
     booking_fee: float
     minimum_fare: float
     commission_per_ride: float
+    commission_type: str  # "fixed" or "percentage"
+    weight_rating: float
+    weight_distance: float
     is_active: bool
     updated_at: datetime
 
@@ -171,3 +174,6 @@ class FareConfigUpdateRequest(BaseModel):
     booking_fee: float = Field(..., ge=0)
     minimum_fare: float = Field(..., ge=0)
     commission_per_ride: float = Field(..., ge=0)
+    commission_type: str = Field("fixed", description="'fixed' (DH) or 'percentage' (% of fare)")
+    weight_rating: float = Field(1.0, ge=0, le=10)
+    weight_distance: float = Field(0.5, ge=0, le=10)

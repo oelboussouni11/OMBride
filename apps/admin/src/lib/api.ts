@@ -194,6 +194,9 @@ export interface FareConfig {
   booking_fee: number;
   minimum_fare: number;
   commission_per_ride: number;
+  commission_type: string;
+  weight_rating: number;
+  weight_distance: number;
   is_active: boolean;
   updated_at: string;
 }
@@ -208,6 +211,9 @@ export const updateFareConfig = (data: {
   booking_fee: number;
   minimum_fare: number;
   commission_per_ride: number;
+  commission_type: string;
+  weight_rating: number;
+  weight_distance: number;
 }) =>
   apiFetch<FareConfig>("/admin/fare-config", {
     method: "PUT",

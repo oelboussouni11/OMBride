@@ -18,11 +18,13 @@ interface WSMessage {
 interface WSContextValue {
   lastMessage: WSMessage | null;
   isConnected: boolean;
+  sendMessage: (msg: object) => void;
 }
 
 const WebSocketContext = createContext<WSContextValue>({
   lastMessage: null,
   isConnected: false,
+  sendMessage: () => {},
 });
 
 export function WebSocketProvider({ children }: PropsWithChildren) {
@@ -78,8 +80,14 @@ export function WebSocketProvider({ children }: PropsWithChildren) {
     };
   }, [connect]);
 
+  const sendMessage = useCallback((msg: object) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(msg));
+    }
+  }, []);
+
   return (
-    <WebSocketContext.Provider value={{ lastMessage, isConnected }}>
+    <WebSocketContext.Provider value={{ lastMessage, isConnected, sendMessage }}>
       {children}
     </WebSocketContext.Provider>
   );

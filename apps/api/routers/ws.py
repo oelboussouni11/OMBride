@@ -53,7 +53,11 @@ async def _get_user(user_id: str) -> User | None:
 
 @router.websocket("/ws/driver/{driver_id}")
 async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
-    """Driver WebSocket — receives location updates, sends ride requests."""
+    """Driver WebSocket — receives location updates, sends ride requests.
+
+    NOTE: driver_id can be either the driver table PK or the user_id.
+    The mobile app sends user.id, so we look up by user_id first.
+    """
     payload = await _authenticate_ws(token)
     if payload is None or payload.get("role") != UserRole.driver.value:
         await ws.close(code=4001, reason="Unauthorized")
@@ -61,15 +65,27 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
 
     user_id_str = payload["sub"]
 
-    # Verify this driver belongs to the authenticated user
+    # Look up driver — try by user_id first (mobile sends user.id), then by driver.id
     async with get_session_factory()() as db:
         result = await db.execute(
-            select(Driver).where(Driver.id == driver_id, Driver.user_id == user_id_str)
+            select(Driver).where(Driver.user_id == user_id_str)
         )
         driver = result.scalar_one_or_none()
         if driver is None:
+            result = await db.execute(
+                select(Driver).where(Driver.id == driver_id, Driver.user_id == user_id_str)
+            )
+            driver = result.scalar_one_or_none()
+        if driver is None:
             await ws.close(code=4003, reason="Driver not found")
             return
+        actual_driver_id = driver.id
+
+        # Mark driver as available
+        await db.execute(
+            update(Driver).where(Driver.id == actual_driver_id).values(is_available=True)
+        )
+        await db.commit()
 
     user_id = UUID(user_id_str)
     await driver_manager.connect(user_id, ws)
@@ -102,10 +118,10 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
                     continue
 
                 # Store in Redis (GEOADD)
-                await redis.geoadd(REDIS_LOCATION_KEY, (lng, lat, str(driver_id)))
+                await redis.geoadd(REDIS_LOCATION_KEY, (lng, lat, str(actual_driver_id)))
 
                 # Forward to rider if driver has an active ride
-                await forward_driver_location_to_rider(driver_id, lat, lng)
+                await forward_driver_location_to_rider(actual_driver_id, lat, lng)
 
                 # Batch flush to PostgreSQL every PG_LOCATION_FLUSH_INTERVAL
                 now = time.monotonic()
@@ -114,7 +130,7 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
                     async with get_session_factory()() as db:
                         await db.execute(
                             update(Driver)
-                            .where(Driver.id == driver_id)
+                            .where(Driver.id == actual_driver_id)
                             .values(
                                 current_location=f"SRID=4326;POINT({lng} {lat})",
                                 location_updated_at=__import__("datetime").datetime.now(
@@ -128,6 +144,15 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
         pass
     finally:
         driver_manager.disconnect(user_id)
+        # Mark driver as unavailable
+        try:
+            async with get_session_factory()() as db:
+                await db.execute(
+                    update(Driver).where(Driver.id == actual_driver_id).values(is_available=False)
+                )
+                await db.commit()
+        except Exception:
+            pass
 
 
 # ── Rider WebSocket ──────────────────────────────────────────────────────────
@@ -135,14 +160,27 @@ async def ws_driver(ws: WebSocket, driver_id: UUID, token: str = Query(...)):
 
 @router.websocket("/ws/rider/{rider_id}")
 async def ws_rider(ws: WebSocket, rider_id: UUID, token: str = Query(...)):
-    """Rider WebSocket — listens for ride status updates and driver locations."""
+    """Rider WebSocket — listens for ride status updates and driver locations.
+
+    NOTE: rider_id can be the user_id (sent by mobile app). We look up the
+    actual rider record and register using rider.id so that ride notifications
+    (which use rider.id) reach the right connection.
+    """
     payload = await _authenticate_ws(token)
     if payload is None or payload.get("role") != UserRole.rider.value:
         await ws.close(code=4001, reason="Unauthorized")
         return
 
     user_id = UUID(payload["sub"])
-    await rider_manager.connect(rider_id, ws)
+
+    # Look up rider by user_id to get the rider table PK
+    async with get_session_factory()() as db:
+        from models.user import Rider
+        result = await db.execute(select(Rider).where(Rider.user_id == user_id))
+        rider = result.scalar_one_or_none()
+        actual_rider_id = rider.id if rider else rider_id
+
+    await rider_manager.connect(actual_rider_id, ws)
 
     try:
         while True:
@@ -164,7 +202,7 @@ async def ws_rider(ws: WebSocket, rider_id: UUID, token: str = Query(...)):
     except WebSocketDisconnect:
         pass
     finally:
-        rider_manager.disconnect(rider_id)
+        rider_manager.disconnect(actual_rider_id)
 
 
 # ── Admin WebSocket ──────────────────────────────────────────────────────────

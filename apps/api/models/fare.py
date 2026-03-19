@@ -1,13 +1,19 @@
 """FareConfig model."""
 
+import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
+
+
+class CommissionType(str, enum.Enum):
+    fixed = "fixed"       # e.g. 1.00 DH per ride
+    percentage = "percentage"  # e.g. 10% of fare
 
 
 class FareConfig(Base):
@@ -20,6 +26,11 @@ class FareConfig(Base):
     booking_fee: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     minimum_fare: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     commission_per_ride: Mapped[float] = mapped_column(Numeric(10, 2), default=1.00)
+    commission_type: Mapped[str] = mapped_column(String, default="fixed")  # "fixed" or "percentage"
+    # Matching weights: score = (rating * weight_rating) - (distance_km * weight_distance)
+    # Higher score = offered first. Admin can tune these.
+    weight_rating: Mapped[float] = mapped_column(Numeric(5, 2), default=1.00)
+    weight_distance: Mapped[float] = mapped_column(Numeric(5, 2), default=0.50)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)

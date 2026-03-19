@@ -1,34 +1,90 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
-  FlatList,
   StyleSheet,
+  FlatList,
+  Pressable,
+  TextInput,
   ActivityIndicator,
+  Alert,
+  Modal,
 } from "react-native";
-import { fetchCredits, fetchMe, type CreditTransaction } from "../../services/api";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { fetchCredits, fetchMe, requestTopup, type CreditTransaction } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
 
 export default function EarningsScreen() {
-  const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
   const [balance, setBalance] = useState(0);
+  const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showTopup, setShowTopup] = useState(false);
+  const [topupAmount, setTopupAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
+  const [referenceCode, setReferenceCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [me, txns] = await Promise.all([fetchMe(), fetchCredits()]);
+      if (me.driver) setBalance(me.driver.credit_balance);
+      setTransactions(txns);
+    } catch {}
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    Promise.all([fetchCredits(), fetchMe()])
-      .then(([txns, me]) => {
-        setTransactions(txns);
-        if (me.driver) setBalance(me.driver.credit_balance);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+    loadData();
+  }, [loadData]);
 
   const todayRides = transactions.filter(
     (t) =>
       t.type === "ride_fee" &&
       new Date(t.created_at).toDateString() === new Date().toDateString()
   ).length;
+
+  const totalEarned = transactions
+    .filter((t) => t.type === "ride_fee")
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  const totalTopups = transactions
+    .filter((t) => t.type === "topup" && t.amount > 0)
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  async function handleTopup() {
+    const amount = parseFloat(topupAmount);
+    if (!amount || amount <= 0) {
+      Alert.alert("Error", "Enter a valid amount");
+      return;
+    }
+    if (!referenceCode.trim()) {
+      Alert.alert("Error", "Please enter your proof of payment (receipt or reference number)");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await requestTopup({
+        amount,
+        payment_method: paymentMethod,
+        reference_code: referenceCode.trim(),
+      });
+      Alert.alert("Request Sent", "Your top-up request has been submitted and will be reviewed by admin.");
+      setShowTopup(false);
+      setTopupAmount("");
+      setReferenceCode("");
+      loadData();
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function formatDate(iso: string) {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
 
   if (loading) {
     return (
@@ -39,30 +95,35 @@ export default function EarningsScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      {/* Stats */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{todayRides}</Text>
-          <Text style={styles.statLabel}>Rides Today</Text>
+    <SafeAreaView style={styles.container} edges={["bottom"]}>
+      {/* Balance Card */}
+      <View style={styles.balanceCard}>
+        <Text style={styles.balanceLabel}>Credit Balance</Text>
+        <Text style={styles.balanceAmount}>{balance.toFixed(2)} DH</Text>
+        <View style={styles.statsRow}>
+          <View style={styles.miniStat}>
+            <Text style={styles.miniStatValue}>{todayRides}</Text>
+            <Text style={styles.miniStatLabel}>Rides Today</Text>
+          </View>
+          <View style={styles.miniStatDivider} />
+          <View style={styles.miniStat}>
+            <Text style={styles.miniStatValue}>{totalEarned.toFixed(0)}</Text>
+            <Text style={styles.miniStatLabel}>Total Rides (DH)</Text>
+          </View>
+          <View style={styles.miniStatDivider} />
+          <View style={styles.miniStat}>
+            <Text style={styles.miniStatValue}>{totalTopups.toFixed(0)}</Text>
+            <Text style={styles.miniStatLabel}>Top-ups (DH)</Text>
+          </View>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{balance.toFixed(2)}</Text>
-          <Text style={styles.statLabel}>Credits (DH)</Text>
-        </View>
+        <Pressable style={styles.topupButton} onPress={() => setShowTopup(true)}>
+          <Text style={styles.topupButtonText}>+ Top Up Credits</Text>
+        </Pressable>
       </View>
 
-      {/* How to buy credits */}
-      <View style={styles.infoCard}>
-        <Text style={styles.infoTitle}>How to Buy Credits</Text>
-        <Text style={styles.infoText}>
-          Visit any CashPlus or WafaCash agent and provide your phone number.
-          You can also top up via wire transfer. Contact admin for details.
-        </Text>
-      </View>
-
-      {/* Transaction list */}
+      {/* Transaction History */}
       <Text style={styles.sectionTitle}>Transaction History</Text>
+
       {transactions.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>No transactions yet</Text>
@@ -71,76 +132,211 @@ export default function EarningsScreen() {
         <FlatList
           data={transactions}
           keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingBottom: 24 }}
           renderItem={({ item }) => (
             <View style={styles.txnRow}>
-              <View style={styles.txnLeft}>
-                <View
-                  style={[
-                    styles.txnDot,
-                    { backgroundColor: item.type === "topup" ? colors.success : colors.danger },
-                  ]}
-                />
-                <View>
-                  <Text style={styles.txnType}>
-                    {item.type === "topup" ? "Top Up" : "Ride Fee"}
-                  </Text>
-                  <Text style={styles.txnDate}>
-                    {new Date(item.created_at).toLocaleDateString()}
-                  </Text>
-                </View>
+              <View style={[styles.txnIcon, item.type === "topup" ? styles.txnIconTopup : styles.txnIconFee]}>
+                <Text style={[styles.txnIconText, { color: item.type === "topup" ? colors.success : colors.danger }]}>
+                  {item.type === "topup" ? "+" : "-"}
+                </Text>
               </View>
-              <Text
-                style={[
-                  styles.txnAmount,
-                  { color: item.amount >= 0 ? colors.success : colors.danger },
-                ]}
-              >
-                {item.amount >= 0 ? "+" : ""}
-                {item.amount.toFixed(2)} DH
+              <View style={{ flex: 1 }}>
+                <Text style={styles.txnType}>
+                  {item.type === "topup" ? "Credit Top-up" : "Ride Commission"}
+                </Text>
+                <Text style={styles.txnDate}>{formatDate(item.created_at)}</Text>
+                {item.reference_code ? (
+                  <Text style={styles.txnRef}>Ref: {item.reference_code}</Text>
+                ) : null}
+              </View>
+              <Text style={[styles.txnAmount, item.amount > 0 ? styles.txnPositive : styles.txnNegative]}>
+                {item.amount > 0 ? "+" : ""}{item.amount.toFixed(2)} DH
               </Text>
             </View>
           )}
         />
       )}
-    </View>
+
+      {/* Topup Modal */}
+      <Modal visible={showTopup} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Top Up Credits</Text>
+            <Text style={styles.modalSubtitle}>
+              Pay via bank transfer or cash, then submit your proof of payment below.
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Amount (DH)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 50"
+                placeholderTextColor={colors.textMuted}
+                value={topupAmount}
+                onChangeText={setTopupAmount}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Payment Method</Text>
+              <View style={styles.methodRow}>
+                {(["bank_transfer", "cash"] as const).map((m) => (
+                  <Pressable
+                    key={m}
+                    style={[styles.methodButton, paymentMethod === m && styles.methodActive]}
+                    onPress={() => setPaymentMethod(m)}
+                  >
+                    <Text style={[styles.methodText, paymentMethod === m && styles.methodTextActive]}>
+                      {m === "bank_transfer" ? "Bank Transfer" : "Cash"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Proof of Payment *</Text>
+              <TextInput
+                style={[styles.input, { minHeight: 64, textAlignVertical: "top" }]}
+                placeholder="Receipt number, transfer reference, or payment details"
+                placeholderTextColor={colors.textMuted}
+                value={referenceCode}
+                onChangeText={setReferenceCode}
+                multiline
+              />
+              <Text style={styles.inputHint}>Required — enter your receipt or reference number</Text>
+            </View>
+
+            <Pressable
+              style={[styles.submitButton, submitting && { opacity: 0.6 }]}
+              onPress={handleTopup}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color={colors.white} />
+              ) : (
+                <Text style={styles.submitText}>Submit Top-up Request</Text>
+              )}
+            </Pressable>
+
+            <Pressable style={styles.modalCancel} onPress={() => setShowTopup(false)}>
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: spacing.md },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  statsRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.background },
+  balanceCard: {
+    backgroundColor: colors.primary,
+    margin: spacing.md,
     borderRadius: radius.md,
     padding: spacing.lg,
     alignItems: "center",
   },
-  statValue: { fontSize: 28, fontWeight: "800", color: colors.text },
-  statLabel: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs },
-  infoCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+  balanceLabel: { fontSize: 13, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: 0.5 },
+  balanceAmount: { fontSize: 40, fontWeight: "800", color: colors.white, marginTop: spacing.xs },
+  statsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
   },
-  infoTitle: { fontSize: 14, fontWeight: "700", color: colors.text, marginBottom: spacing.xs },
-  infoText: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: spacing.sm },
-  emptyState: { alignItems: "center", padding: spacing.xl },
-  emptyText: { fontSize: 14, color: colors.textMuted },
+  miniStat: { alignItems: "center", paddingHorizontal: spacing.lg },
+  miniStatValue: { fontSize: 18, fontWeight: "700", color: colors.white },
+  miniStatLabel: { fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 2 },
+  miniStatDivider: { width: 1, height: 24, backgroundColor: "rgba(255,255,255,0.2)" },
+  topupButton: {
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: radius.full,
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+  },
+  topupButtonText: { color: colors.white, fontSize: 14, fontWeight: "600" },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  emptyState: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyText: { fontSize: 15, color: colors.textMuted },
   txnRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: spacing.sm,
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  txnLeft: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  txnDot: { width: 8, height: 8, borderRadius: 4 },
-  txnType: { fontSize: 14, fontWeight: "600", color: colors.text },
-  txnDate: { fontSize: 12, color: colors.textMuted },
+  txnIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
+  txnIconTopup: { backgroundColor: "#dcfce7" },
+  txnIconFee: { backgroundColor: "#fee2e2" },
+  txnIconText: { fontSize: 18, fontWeight: "700" },
+  txnType: { fontSize: 15, fontWeight: "600", color: colors.text },
+  txnDate: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  txnRef: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   txnAmount: { fontSize: 16, fontWeight: "700" },
+  txnPositive: { color: colors.success },
+  txnNegative: { color: colors.danger },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  modalContent: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: spacing.lg,
+    paddingBottom: 40,
+  },
+  modalTitle: { fontSize: 22, fontWeight: "700", color: colors.text, marginBottom: spacing.xs },
+  modalSubtitle: { fontSize: 14, color: colors.textSecondary, marginBottom: spacing.lg, lineHeight: 20 },
+  inputGroup: { marginBottom: spacing.md },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: spacing.xs,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.surface,
+  },
+  inputHint: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs },
+  methodRow: { flexDirection: "row", gap: spacing.sm },
+  methodButton: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  methodActive: { borderColor: colors.primary, backgroundColor: colors.surface },
+  methodText: { fontSize: 14, fontWeight: "600", color: colors.textMuted },
+  methodTextActive: { color: colors.text },
+  submitButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingVertical: 16,
+    alignItems: "center",
+    marginTop: spacing.sm,
+  },
+  submitText: { color: colors.white, fontSize: 16, fontWeight: "700" },
+  modalCancel: { paddingVertical: 14, alignItems: "center", marginTop: spacing.xs },
+  modalCancelText: { fontSize: 16, color: colors.textSecondary, fontWeight: "500" },
 });

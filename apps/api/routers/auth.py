@@ -209,3 +209,73 @@ async def refresh(
 async def me(user: User = Depends(get_current_user)) -> UserResponse:
     """Return the currently authenticated user's profile."""
     return _build_user_response(user)
+
+
+@router.get("/me/stats")
+async def me_stats(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return ride counts and average ratings for the current user."""
+    from sqlalchemy import func as sqlfunc
+    from models.ride import Ride, RideStatus
+
+    stats = {}
+
+    if user.rider:
+        completed = (await db.execute(
+            select(sqlfunc.count()).select_from(Ride).where(
+                Ride.rider_id == user.rider.id, Ride.status == RideStatus.completed
+            )
+        )).scalar() or 0
+        cancelled = (await db.execute(
+            select(sqlfunc.count()).select_from(Ride).where(
+                Ride.rider_id == user.rider.id, Ride.status == RideStatus.cancelled
+            )
+        )).scalar() or 0
+        avg_rating = (await db.execute(
+            select(sqlfunc.avg(Ride.rider_rating)).where(
+                Ride.rider_id == user.rider.id, Ride.rider_rating.isnot(None)
+            )
+        )).scalar()
+        total = completed + cancelled
+        score = 5.0
+        if total > 0:
+            cancel_ratio = cancelled / total
+            score = max(1.0, round(5.0 - (cancel_ratio * 4.0), 1))
+        stats["rider"] = {
+            "completed_rides": completed,
+            "cancelled_rides": cancelled,
+            "average_rating": round(float(avg_rating or 5.0), 1),
+            "score": score,
+        }
+
+    if user.driver:
+        completed = (await db.execute(
+            select(sqlfunc.count()).select_from(Ride).where(
+                Ride.driver_id == user.driver.id, Ride.status == RideStatus.completed
+            )
+        )).scalar() or 0
+        cancelled = (await db.execute(
+            select(sqlfunc.count()).select_from(Ride).where(
+                Ride.driver_id == user.driver.id, Ride.status == RideStatus.cancelled
+            )
+        )).scalar() or 0
+        avg_rating = (await db.execute(
+            select(sqlfunc.avg(Ride.rating)).where(
+                Ride.driver_id == user.driver.id, Ride.rating.isnot(None)
+            )
+        )).scalar()
+        total = completed + cancelled
+        score = 5.0
+        if total > 0:
+            cancel_ratio = cancelled / total
+            score = max(1.0, round(5.0 - (cancel_ratio * 4.0), 1))
+        stats["driver"] = {
+            "completed_rides": completed,
+            "cancelled_rides": cancelled,
+            "average_rating": round(float(avg_rating or 5.0), 1),
+            "score": score,
+        }
+
+    return stats

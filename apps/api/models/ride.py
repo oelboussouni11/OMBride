@@ -46,6 +46,8 @@ class Ride(Base):
     status: Mapped[RideStatus] = mapped_column(Enum(RideStatus), default=RideStatus.requested)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # rider rates driver 1-5
+    rider_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # driver rates rider 1-5
 
     rider: Mapped["Rider"] = relationship(back_populates="rides")  # noqa: F821
     driver: Mapped["Driver | None"] = relationship(back_populates="rides")  # noqa: F821

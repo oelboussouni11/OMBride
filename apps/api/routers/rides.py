@@ -1,4 +1,4 @@
-"""Ride routes — estimate, request, accept, status transitions."""
+"""Ride routes — estimate, request, accept, status transitions, rating."""
 
 import asyncio
 from datetime import datetime, timezone
@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from geoalchemy2.functions import ST_MakePoint, ST_SetSRID
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -44,6 +45,51 @@ async def _get_ride_or_404(db: AsyncSession, ride_id: UUID) -> Ride:
     if ride is None:
         raise HTTPException(status_code=404, detail="Ride not found")
     return ride
+
+
+# ── History ──────────────────────────────────────────────────────────────────
+
+
+@router.get("/history", response_model=list[RideResponse])
+async def ride_history(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[RideResponse]:
+    """Get ride history for the current user (rider or driver)."""
+    if user.rider:
+        result = await db.execute(
+            select(Ride)
+            .where(Ride.rider_id == user.rider.id)
+            .order_by(Ride.created_at.desc())
+            .limit(50)
+        )
+    elif user.driver:
+        result = await db.execute(
+            select(Ride)
+            .where(Ride.driver_id == user.driver.id)
+            .order_by(Ride.created_at.desc())
+            .limit(50)
+        )
+    else:
+        return []
+
+    rides = result.scalars().all()
+    return [
+        RideResponse(
+            id=r.id,
+            rider_id=r.rider_id,
+            driver_id=r.driver_id,
+            pickup_address=r.pickup_address,
+            dropoff_address=r.dropoff_address,
+            distance_km=float(r.distance_km) if r.distance_km else None,
+            duration_min=r.duration_min,
+            fare=float(r.fare) if r.fare else None,
+            status=r.status,
+            created_at=r.created_at,
+            completed_at=r.completed_at,
+        )
+        for r in rides
+    ]
 
 
 # ── Estimate ─────────────────────────────────────────────────────────────────
@@ -304,17 +350,26 @@ async def complete_ride(
         raise HTTPException(status_code=403, detail="Not your ride")
 
     config = await get_active_fare_config(db)
-    commission = float(config.commission_per_ride)
+    fare_amount = float(ride.fare) if ride.fare else 0
+
+    # Calculate commission: fixed DH or percentage of fare
+    commission_type = getattr(config, "commission_type", "fixed") or "fixed"
+    if commission_type == "percentage":
+        commission = round(fare_amount * float(config.commission_per_ride) / 100, 2)
+    else:
+        commission = float(config.commission_per_ride)
 
     # Deduct commission
     driver = user.driver
     driver.credit_balance = float(driver.credit_balance) - commission
 
-    # Record credit transaction
+    # Record credit transaction with ride fare info
+    commission_label = f"{config.commission_per_ride}%" if commission_type == "percentage" else f"{commission:.2f} DH"
     txn = CreditTransaction(
         driver_id=driver.id,
         amount=-commission,
         type=CreditType.ride_fee,
+        reference_code=f"Ride {str(ride.id)[:8]} — Fare: {fare_amount:.2f} DH, Commission: {commission_label}",
     )
     db.add(txn)
 
@@ -422,3 +477,41 @@ async def cancel_ride(
         created_at=ride.created_at,
         completed_at=ride.completed_at,
     )
+
+
+# ── Rate ────────────────────────────────────────────────────────────────────
+
+
+class RateRideRequest(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+
+
+@router.post("/{ride_id}/rate")
+async def rate_ride(
+    ride_id: UUID,
+    body: RateRideRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Rate a completed ride. Rider rates driver, driver rates rider."""
+    ride = await _get_ride_or_404(db, ride_id)
+    if ride.status != RideStatus.completed:
+        raise HTTPException(status_code=400, detail="Can only rate completed rides")
+
+    is_rider = user.rider is not None and ride.rider_id == user.rider.id
+    is_driver = user.driver is not None and ride.driver_id == user.driver.id
+
+    if not is_rider and not is_driver:
+        raise HTTPException(status_code=403, detail="Not part of this ride")
+
+    if is_rider:
+        if ride.rating is not None:
+            raise HTTPException(status_code=400, detail="Already rated")
+        ride.rating = body.rating
+    elif is_driver:
+        if ride.rider_rating is not None:
+            raise HTTPException(status_code=400, detail="Already rated")
+        ride.rider_rating = body.rating
+
+    await db.commit()
+    return {"status": "ok", "rating": body.rating}

@@ -1,10 +1,10 @@
-import * as SecureStore from "expo-secure-store";
+import { getItem } from "../utils/storage";
 import { API_BASE_URL } from "../constants/api";
 
 const TOKEN_KEY = "auth_token";
 
 async function getToken(): Promise<string | null> {
-  return SecureStore.getItemAsync(TOKEN_KEY);
+  return getItem(TOKEN_KEY);
 }
 
 export async function apiFetch<T>(
@@ -76,6 +76,10 @@ export function requestRide(data: {
   });
 }
 
+export function fetchRideHistory() {
+  return apiFetch<RideResponse[]>("/rides/history");
+}
+
 export function cancelRide(rideId: string) {
   return apiFetch<RideResponse>(`/rides/${rideId}/cancel`, { method: "POST" });
 }
@@ -110,6 +114,71 @@ export interface CreditTransaction {
 export function fetchCredits() {
   return apiFetch<CreditTransaction[]>("/credits/");
 }
+
+export function requestTopup(data: { amount: number; payment_method: string; reference_code: string }) {
+  return apiFetch<CreditTransaction>("/credits/topup", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// ── Saved Locations ────────────────────────────────────────────────────────
+
+export interface SavedLocation {
+  label: string;
+  latitude: number;
+  longitude: number;
+  address: string;
+}
+
+export function getSavedLocations() {
+  return apiFetch<SavedLocation[]>("/riders/saved-locations");
+}
+
+export function addSavedLocation(data: SavedLocation) {
+  return apiFetch<SavedLocation[]>("/riders/saved-locations", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteSavedLocation(label: string) {
+  return apiFetch<SavedLocation[]>(`/riders/saved-locations/${encodeURIComponent(label)}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Rating ─────────────────────────────────────────────────────────────────
+
+export function rateRide(rideId: string, rating: number) {
+  return apiFetch<{ status: string; rating: number }>(`/rides/${rideId}/rate`, {
+    method: "POST",
+    body: JSON.stringify({ rating }),
+  });
+}
+
+// ── Stats ──────────────────────────────────────────────────────────────────
+
+export interface UserStats {
+  rider?: {
+    completed_rides: number;
+    cancelled_rides: number;
+    average_rating: number;
+    score: number;
+  };
+  driver?: {
+    completed_rides: number;
+    cancelled_rides: number;
+    average_rating: number;
+    score: number;
+  };
+}
+
+export function fetchStats() {
+  return apiFetch<UserStats>("/auth/me/stats");
+}
+
+// ── User ───────────────────────────────────────────────────────────────────
 
 export function fetchMe() {
   return apiFetch<{

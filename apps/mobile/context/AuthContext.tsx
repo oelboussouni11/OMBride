@@ -5,7 +5,7 @@ import React, {
   useState,
   type PropsWithChildren,
 } from "react";
-import * as SecureStore from "expo-secure-store";
+import { getItem, setItem, deleteItem } from "../utils/storage";
 import { API_BASE_URL } from "../constants/api";
 import type { User, LoginPayload, RegisterPayload } from "../types";
 
@@ -42,9 +42,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   async function loadStoredAuth() {
     try {
-      const token = await SecureStore.getItemAsync(TOKEN_KEY);
-      const refreshToken = await SecureStore.getItemAsync(REFRESH_KEY);
-      const userJson = await SecureStore.getItemAsync(USER_KEY);
+      const token = await getItem(TOKEN_KEY);
+      const refreshToken = await getItem(REFRESH_KEY);
+      const userJson = await getItem(USER_KEY);
       if (token && userJson) {
         setState({
           token,
@@ -61,14 +61,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   async function login(payload: LoginPayload) {
-    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+    const url = `${API_BASE_URL}/auth/login`;
+    console.log("Login URL:", url, "Payload:", JSON.stringify(payload));
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
+    console.log("Login response status:", res.status);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      console.log("Login error body:", JSON.stringify(err));
       throw new Error(err.detail ?? "Login failed");
     }
 
@@ -82,9 +86,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       createdAt: new Date().toISOString(),
     };
 
-    await SecureStore.setItemAsync(TOKEN_KEY, data.access_token);
-    await SecureStore.setItemAsync(REFRESH_KEY, data.refresh_token);
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
+    await setItem(TOKEN_KEY, data.access_token);
+    await setItem(REFRESH_KEY, data.refresh_token);
+    await setItem(USER_KEY, JSON.stringify(user));
     setState({ user, token: data.access_token, refreshToken: data.refresh_token, isLoading: false });
   }
 
@@ -110,16 +114,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
       createdAt: new Date().toISOString(),
     };
 
-    await SecureStore.setItemAsync(TOKEN_KEY, data.access_token);
-    await SecureStore.setItemAsync(REFRESH_KEY, data.refresh_token);
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
+    await setItem(TOKEN_KEY, data.access_token);
+    await setItem(REFRESH_KEY, data.refresh_token);
+    await setItem(USER_KEY, JSON.stringify(user));
     setState({ user, token: data.access_token, refreshToken: data.refresh_token, isLoading: false });
   }
 
   async function logout() {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    await SecureStore.deleteItemAsync(REFRESH_KEY);
-    await SecureStore.deleteItemAsync(USER_KEY);
+    await deleteItem(TOKEN_KEY);
+    await deleteItem(REFRESH_KEY);
+    await deleteItem(USER_KEY);
     setState({ user: null, token: null, refreshToken: null, isLoading: false });
   }
 

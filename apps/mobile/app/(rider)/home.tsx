@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { useRide } from "../../context/RideContext";
 import { useWebSocket } from "../../context/WebSocketContext";
-import { estimateRide, requestRide, cancelRide, type EstimateResponse, type RideResponse } from "../../services/api";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { estimateRide, requestRide, cancelRide, rateRide, getSavedLocations, addSavedLocation, deleteSavedLocation, type EstimateResponse, type RideResponse, type SavedLocation } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
 
 type RideState = "idle" | "entering_destination" | "estimate" | "searching" | "matched" | "arriving" | "in_progress" | "completed";
@@ -34,11 +35,23 @@ export default function RiderHomeScreen() {
   const [destLat, setDestLat] = useState("");
   const [destLng, setDestLng] = useState("");
 
+  // Saved locations
+  const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
+
+  // Search timer
+  const [searchSeconds, setSearchSeconds] = useState(0);
+  const searchTimerRef = useRef<ReturnType<typeof setInterval>>();
+  const SEARCH_TIMEOUT = 90; // max seconds to wait for a driver
+
+  // Rating
+  const [selectedRating, setSelectedRating] = useState(0);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+
   // Driver info from WS
   const [driverInfo, setDriverInfo] = useState<any>(null);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Get user location on mount
+  // Get user location and saved locations on mount
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -54,6 +67,7 @@ export default function RiderHomeScreen() {
         address: "Current Location",
       });
     })();
+    getSavedLocations().then(setSavedLocations).catch(() => {});
   }, []);
 
   // Listen for WS messages
@@ -66,16 +80,27 @@ export default function RiderHomeScreen() {
         setRideState("matched");
         break;
       case "ride_status":
-        if (lastMessage.data.status === "arriving") setRideState("arriving");
+        if (lastMessage.data.status === "arriving") {
+          setRideState("arriving");
+          Alert.alert("Driver arriving", "Your driver is at the pickup location.");
+        }
         if (lastMessage.data.status === "in_progress") setRideState("in_progress");
         if (lastMessage.data.status === "completed") {
           setRideState("completed");
         }
         if (lastMessage.data.status === "cancelled") {
           if (lastMessage.data.reason === "no_drivers_available") {
-            Alert.alert("No drivers available", "Please try again later.");
+            Alert.alert("No drivers available", "No drivers are nearby right now. Please try again in a few minutes.");
+          } else {
+            Alert.alert("Ride cancelled", "Your ride has been cancelled.");
           }
           resetRide();
+        }
+        break;
+      case "search_update":
+        // Update search timer from server
+        if (lastMessage.data.elapsed) {
+          setSearchSeconds(lastMessage.data.elapsed);
         }
         break;
       case "driver_location":
@@ -83,6 +108,27 @@ export default function RiderHomeScreen() {
         break;
     }
   }, [lastMessage]);
+
+  // Search timer — counts up and auto-cancels after timeout
+  useEffect(() => {
+    if (rideState === "searching") {
+      setSearchSeconds(0);
+      searchTimerRef.current = setInterval(() => {
+        setSearchSeconds((prev) => {
+          if (prev + 1 >= SEARCH_TIMEOUT) {
+            clearInterval(searchTimerRef.current);
+            handleCancel();
+            Alert.alert("No drivers found", "No drivers are available right now. Please try again later.");
+            return 0;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+      return () => clearInterval(searchTimerRef.current);
+    } else {
+      clearInterval(searchTimerRef.current);
+    }
+  }, [rideState]);
 
   function resetRide() {
     setRideState("idle");
@@ -164,8 +210,76 @@ export default function RiderHomeScreen() {
     }
     try {
       await cancelRide(currentRide.id);
-    } catch {}
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "Could not cancel ride");
+    }
     resetRide();
+  }
+
+  function selectSavedLocation(loc: SavedLocation) {
+    setDestAddress(loc.address || loc.label);
+    setDestLat(String(loc.latitude));
+    setDestLng(String(loc.longitude));
+    setRideState("entering_destination");
+  }
+
+  async function handleSaveLocation() {
+    if (!destLat || !destLng) return;
+    const label = Platform.OS === "web"
+      ? window.prompt("Enter a label (e.g. Home, Work, Gym)")
+      : await new Promise<string | null>((resolve) => {
+          Alert.prompt?.(
+            "Save Location",
+            "Enter a label (e.g. Home, Work, Gym)",
+            (text) => resolve(text),
+          ) ?? resolve(window.prompt("Enter a label (e.g. Home, Work, Gym)"));
+        });
+    if (!label?.trim()) return;
+    try {
+      const updated = await addSavedLocation({
+        label: label.trim(),
+        latitude: parseFloat(destLat),
+        longitude: parseFloat(destLng),
+        address: destAddress || "Saved location",
+      });
+      setSavedLocations(updated);
+      Alert.alert("Saved", `"${label.trim()}" has been saved.`);
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
+    }
+  }
+
+  function handleDeleteSavedLocation(label: string) {
+    Alert.alert("Delete location?", `Remove "${label}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const updated = await deleteSavedLocation(label);
+            setSavedLocations(updated);
+          } catch (err: any) {
+            Alert.alert("Error", err.message);
+          }
+        },
+      },
+    ]);
+  }
+
+  function confirmCancel() {
+    if (rideState === "matched" || rideState === "arriving") {
+      Alert.alert(
+        "Cancel ride?",
+        "Your driver is already on the way. Are you sure?",
+        [
+          { text: "No", style: "cancel" },
+          { text: "Yes, cancel", style: "destructive", onPress: handleCancel },
+        ]
+      );
+    } else {
+      handleCancel();
+    }
   }
 
   // ── IDLE ──────────────────────────────────────────────────────────────────
@@ -184,9 +298,35 @@ export default function RiderHomeScreen() {
             style={styles.whereToButton}
             onPress={() => setRideState("entering_destination")}
           >
-            <Text style={styles.whereToIcon}>&#x1F50D;</Text>
+            <Text style={styles.whereToIcon}>→</Text>
             <Text style={styles.whereToText}>Where to?</Text>
           </Pressable>
+
+          {savedLocations.length > 0 && (
+            <View style={styles.savedSection}>
+              <Text style={styles.savedTitle}>Saved Places</Text>
+              {savedLocations.map((loc) => (
+                <Pressable
+                  key={loc.label}
+                  style={styles.savedItem}
+                  onPress={() => selectSavedLocation(loc)}
+                  onLongPress={() => handleDeleteSavedLocation(loc.label)}
+                >
+                  <View style={styles.savedIcon}>
+                    <Text style={styles.savedIconText}>
+                      {loc.label.toLowerCase() === "home" ? "H" :
+                       loc.label.toLowerCase() === "work" ? "W" :
+                       loc.label[0].toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.savedLabel}>{loc.label}</Text>
+                    <Text style={styles.savedAddress} numberOfLines={1}>{loc.address}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -233,6 +373,11 @@ export default function RiderHomeScreen() {
               <Text style={styles.primaryButtonText}>Get Estimate</Text>
             )}
           </Pressable>
+          {destLat && destLng ? (
+            <Pressable style={styles.saveLocationButton} onPress={handleSaveLocation}>
+              <Text style={styles.saveLocationText}>Save this location</Text>
+            </Pressable>
+          ) : null}
           <Pressable style={styles.secondaryButton} onPress={() => setRideState("idle")}>
             <Text style={styles.secondaryButtonText}>Cancel</Text>
           </Pressable>
@@ -288,9 +433,14 @@ export default function RiderHomeScreen() {
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.searchingTitle}>Finding your driver...</Text>
-          <Text style={styles.searchingSubtext}>This may take a moment</Text>
-          <Pressable style={[styles.secondaryButton, { marginTop: 32 }]} onPress={handleCancel}>
-            <Text style={styles.secondaryButtonText}>Cancel</Text>
+          <Text style={styles.searchingSubtext}>
+            Searching... {searchSeconds}s
+          </Text>
+          <View style={styles.progressBarContainer}>
+            <View style={[styles.progressBar, { width: `${Math.min((searchSeconds / SEARCH_TIMEOUT) * 100, 100)}%` }]} />
+          </View>
+          <Pressable style={[styles.dangerButton, { marginTop: 32, width: "80%" }]} onPress={handleCancel}>
+            <Text style={styles.dangerButtonText}>Cancel</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -303,8 +453,13 @@ export default function RiderHomeScreen() {
       rideState === "matched"
         ? "Driver is on the way"
         : rideState === "arriving"
-        ? "Driver arriving"
-        : "On the way to destination";
+        ? "Driver is arriving"
+        : "Heading to destination";
+
+    const statusColor =
+      rideState === "in_progress" ? colors.success
+        : rideState === "arriving" ? colors.warning
+        : colors.primary;
 
     return (
       <SafeAreaView style={styles.container}>
@@ -316,10 +471,13 @@ export default function RiderHomeScreen() {
           )}
         </View>
         <View style={styles.bottomSheet}>
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>{statusText}</Text>
+          {/* Status indicator */}
+          <View style={styles.rideStatusRow}>
+            <View style={[styles.rideStatusDot, { backgroundColor: statusColor }]} />
+            <Text style={styles.rideStatusText}>{statusText}</Text>
           </View>
 
+          {/* Driver card */}
           {driverInfo && (
             <View style={styles.driverCard}>
               <View style={styles.driverAvatar}>
@@ -330,23 +488,63 @@ export default function RiderHomeScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.driverName}>{driverInfo.driver_name}</Text>
                 <Text style={styles.driverVehicle}>
-                  {driverInfo.vehicle_model} · {driverInfo.plate_number}
+                  {driverInfo.vehicle_model}
                 </Text>
-                <Text style={styles.driverPhone}>{driverInfo.driver_phone}</Text>
+              </View>
+              <View style={styles.plateTag}>
+                <Text style={styles.plateText}>{driverInfo.plate_number}</Text>
               </View>
             </View>
           )}
 
-          {currentRide?.fare && (
-            <View style={styles.fareRow}>
-              <Text style={styles.fareLabel}>Fare</Text>
-              <Text style={styles.fareValue}>{currentRide.fare} DH</Text>
+          {/* Ride details */}
+          <View style={styles.rideDetailsGrid}>
+            {currentRide?.fare ? (
+              <View style={styles.rideDetailItem}>
+                <Text style={styles.rideDetailLabel}>Fare</Text>
+                <Text style={styles.rideDetailValue}>{currentRide.fare} DH</Text>
+              </View>
+            ) : null}
+            {currentRide?.distance ? (
+              <View style={styles.rideDetailItem}>
+                <Text style={styles.rideDetailLabel}>Distance</Text>
+                <Text style={styles.rideDetailValue}>{currentRide.distance} km</Text>
+              </View>
+            ) : null}
+            {currentRide?.duration ? (
+              <View style={styles.rideDetailItem}>
+                <Text style={styles.rideDetailLabel}>ETA</Text>
+                <Text style={styles.rideDetailValue}>{currentRide.duration} min</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Call driver */}
+          {driverInfo?.driver_phone && (
+            <View style={styles.contactRow}>
+              <Text style={styles.contactLabel}>Contact driver</Text>
+              <Text style={styles.contactPhone}>{driverInfo.driver_phone}</Text>
             </View>
           )}
 
-          <Pressable style={styles.dangerButton} onPress={handleCancel}>
-            <Text style={styles.dangerButtonText}>Cancel Ride</Text>
-          </Pressable>
+          {/* Route */}
+          <View style={styles.routeRow}>
+            <View style={styles.routeDots}>
+              <View style={[styles.routeDot, { backgroundColor: colors.success }]} />
+              <View style={styles.routeLine} />
+              <View style={[styles.routeDot, { backgroundColor: colors.danger }]} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.routeAddress} numberOfLines={1}>{pickup?.address || "Pickup"}</Text>
+              <Text style={[styles.routeAddress, { marginTop: spacing.md }]} numberOfLines={1}>{dropoff?.address || "Destination"}</Text>
+            </View>
+          </View>
+
+          {rideState !== "in_progress" && (
+            <Pressable style={styles.dangerButton} onPress={confirmCancel}>
+              <Text style={styles.dangerButtonText}>Cancel Ride</Text>
+            </Pressable>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -354,19 +552,58 @@ export default function RiderHomeScreen() {
 
   // ── COMPLETED ─────────────────────────────────────────────────────────────
   if (rideState === "completed") {
+    async function submitRating() {
+      if (selectedRating === 0 || !currentRide) return;
+      try {
+        await rateRide(currentRide.id, selectedRating);
+        setRatingSubmitted(true);
+      } catch {
+        setRatingSubmitted(true);
+      }
+    }
+
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centerContent}>
-          <Text style={{ fontSize: 48 }}>&#x2705;</Text>
+          <Ionicons name="checkmark-circle" size={56} color={colors.success} />
           <Text style={styles.completedTitle}>Ride Complete</Text>
           {currentRide?.fare && (
             <Text style={styles.completedFare}>{currentRide.fare} DH</Text>
           )}
           <Text style={styles.completedRoute}>
-            {pickup?.address} → {dropoff?.address}
+            {pickup?.address} {"->"} {dropoff?.address}
           </Text>
-          <Pressable style={[styles.primaryButton, { marginTop: 32, width: "80%" }]} onPress={resetRide}>
-            <Text style={styles.primaryButtonText}>Done</Text>
+
+          {/* Rating */}
+          {!ratingSubmitted ? (
+            <View style={styles.ratingSection}>
+              <Text style={styles.ratingPrompt}>Rate your driver</Text>
+              <View style={styles.ratingStars}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <Pressable key={star} onPress={() => setSelectedRating(star)}>
+                    <Ionicons
+                      name={star <= selectedRating ? "star" : "star-outline"}
+                      size={36}
+                      color={star <= selectedRating ? colors.warning : colors.border}
+                    />
+                  </Pressable>
+                ))}
+              </View>
+              {selectedRating > 0 && (
+                <Pressable style={[styles.primaryButton, { width: "80%", marginTop: spacing.md }]} onPress={submitRating}>
+                  <Text style={styles.primaryButtonText}>Submit Rating</Text>
+                </Pressable>
+              )}
+            </View>
+          ) : (
+            <Text style={styles.ratingThanks}>Thanks for rating!</Text>
+          )}
+
+          <Pressable
+            style={[styles.secondaryButton, { marginTop: spacing.lg, width: "80%" }]}
+            onPress={() => { setSelectedRating(0); setRatingSubmitted(false); resetRide(); }}
+          >
+            <Text style={styles.secondaryButtonText}>Done</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -475,15 +712,31 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   searchingSubtext: { fontSize: 14, color: colors.textMuted, marginTop: spacing.xs },
-  statusBadge: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    alignSelf: "flex-start",
+  progressBarContainer: {
+    width: "80%",
+    height: 4,
+    backgroundColor: colors.border,
+    borderRadius: 2,
+    marginTop: spacing.md,
+    overflow: "hidden",
+  },
+  progressBar: {
+    height: "100%",
+    backgroundColor: colors.primary,
+    borderRadius: 2,
+  },
+  rideStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     marginBottom: spacing.md,
   },
-  statusText: { fontSize: 14, fontWeight: "600", color: colors.text },
+  rideStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  rideStatusText: { fontSize: 16, fontWeight: "700", color: colors.text },
   driverCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -503,15 +756,62 @@ const styles = StyleSheet.create({
   },
   driverAvatarText: { fontSize: 20, fontWeight: "700", color: colors.white },
   driverName: { fontSize: 16, fontWeight: "700", color: colors.text },
-  driverVehicle: { fontSize: 14, color: colors.textSecondary },
-  driverPhone: { fontSize: 13, color: colors.textMuted },
-  fareRow: {
+  driverVehicle: { fontSize: 14, color: colors.textSecondary, marginTop: 1 },
+  plateTag: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm + 2,
+  },
+  plateText: { fontSize: 12, fontWeight: "700", color: colors.white, letterSpacing: 0.5 },
+  rideDetailsGrid: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  rideDetailItem: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    padding: spacing.sm + 2,
+    alignItems: "center",
+  },
+  rideDetailLabel: { fontSize: 11, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3 },
+  rideDetailValue: { fontSize: 16, fontWeight: "700", color: colors.text, marginTop: 2 },
+  contactRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: spacing.sm,
   },
-  fareLabel: { fontSize: 16, color: colors.textSecondary },
-  fareValue: { fontSize: 18, fontWeight: "700", color: colors.text },
+  contactLabel: { fontSize: 13, color: colors.textMuted },
+  contactPhone: { fontSize: 14, fontWeight: "600", color: colors.text },
+  routeRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  routeDots: {
+    alignItems: "center",
+    width: 12,
+    paddingTop: 3,
+  },
+  routeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  routeLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: colors.border,
+    marginVertical: 2,
+  },
+  routeAddress: { fontSize: 14, color: colors.textSecondary },
   completedTitle: {
     fontSize: 24,
     fontWeight: "700",
@@ -529,5 +829,81 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: spacing.xs,
     textAlign: "center",
+  },
+  ratingSection: {
+    alignItems: "center",
+    marginTop: spacing.xl,
+    width: "100%",
+  },
+  ratingPrompt: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  ratingStars: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  ratingThanks: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.success,
+    marginTop: spacing.xl,
+  },
+  savedSection: {
+    marginTop: spacing.md,
+  },
+  savedTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  savedItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  savedIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  savedIconText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  savedLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  savedAddress: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  saveLocationButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: spacing.sm,
+  },
+  saveLocationText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.textSecondary,
   },
 });
