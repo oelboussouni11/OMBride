@@ -116,89 +116,88 @@ export default function EarningsScreen() {
     );
   }
 
+  function txnIcon(type: string): keyof typeof Ionicons.glyphMap {
+    return type === "ride_earned" ? "trending-up" : type === "topup" ? "add-circle" : "remove-circle";
+  }
+  function txnColor(amount: number) { return amount > 0 ? colors.success : colors.danger; }
+  function txnLabel(type: string) { return type === "ride_earned" ? "Ride Earned" : type === "topup" ? "Top-up" : "Commission"; }
+
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
-      {/* Balance Card */}
-      <View style={styles.balanceCard}>
-        <Text style={styles.balanceLabel}>Credit Balance</Text>
-        <Text style={styles.balanceAmount}>{balance.toFixed(2)} DH</Text>
-        <View style={styles.statsRow}>
-          <View style={styles.miniStat}>
-            <Text style={styles.miniStatValue}>{todayRides}</Text>
-            <Text style={styles.miniStatLabel}>Rides Today</Text>
-          </View>
-          <View style={styles.miniStatDivider} />
-          <View style={styles.miniStat}>
-            <Text style={styles.miniStatValue}>{totalEarned.toFixed(0)}</Text>
-            <Text style={styles.miniStatLabel}>Earned (DH)</Text>
-          </View>
-          <View style={styles.miniStatDivider} />
-          <View style={styles.miniStat}>
-            <Text style={styles.miniStatValue}>{totalCommission.toFixed(0)}</Text>
-            <Text style={styles.miniStatLabel}>Commission (DH)</Text>
-          </View>
-        </View>
-        <Pressable style={styles.topupButton} onPress={() => setShowTopup(true)}>
-          <Text style={styles.topupButtonText}>+ Top Up Credits</Text>
-        </Pressable>
-      </View>
-
-      {/* Filters */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-        {TIME_FILTERS.map((f) => (
-          <Pressable key={f} style={[styles.filterChip, timeFilter === f && styles.filterChipActive]} onPress={() => setTimeFilter(f)}>
-            <Text style={[styles.filterChipText, timeFilter === f && styles.filterChipTextActive]}>{f}</Text>
-          </Pressable>
-        ))}
-        <View style={styles.filterDivider} />
-        {TYPE_FILTERS.map((f) => (
-          <Pressable key={f} style={[styles.filterChip, typeFilter === f && styles.filterChipActive]} onPress={() => setTypeFilter(f)}>
-            <Text style={[styles.filterChipText, typeFilter === f && styles.filterChipTextActive]}>{f}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
-      <Text style={styles.sectionTitle}>Transactions ({filtered.length})</Text>
-
-      {filtered.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="receipt-outline" size={24} color={colors.textMuted} />
-          <Text style={styles.emptyText}>{transactions.length === 0 ? "No transactions yet" : "No matches for this filter"}</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          renderItem={({ item }) => (
-            <View style={styles.txnRow}>
-              <View style={[styles.txnIcon,
-                item.type === "ride_earned" ? styles.txnIconEarned :
-                item.type === "topup" ? styles.txnIconTopup : styles.txnIconFee
-              ]}>
-                <Text style={[styles.txnIconText, {
-                  color: item.amount > 0 ? colors.success : colors.danger
-                }]}>
-                  {item.amount > 0 ? "+" : "-"}
-                </Text>
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingBottom: 24 }}
+        onRefresh={loadData}
+        refreshing={loading}
+        ListHeaderComponent={
+          <>
+            {/* Balance */}
+            <View style={styles.balanceCard}>
+              <View style={styles.balanceTop}>
+                <Text style={styles.balanceLabel}>Credit Balance</Text>
+                <Pressable style={styles.topupBtn} onPress={() => setShowTopup(true)}>
+                  <Ionicons name="add" size={16} color={colors.white} />
+                  <Text style={styles.topupBtnText}>Top Up</Text>
+                </Pressable>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.txnType}>
-                  {item.type === "ride_earned" ? "Ride Earned" :
-                   item.type === "topup" ? "Credit Top-up" : "Commission"}
-                </Text>
-                <Text style={styles.txnDate}>{formatDate(item.created_at)}</Text>
-                {item.reference_code ? (
-                  <Text style={styles.txnRef}>Ref: {item.reference_code}</Text>
-                ) : null}
+              <Text style={styles.balanceAmount}>{balance.toFixed(2)} DH</Text>
+              <View style={styles.balanceStats}>
+                <View style={styles.bStat}>
+                  <Text style={styles.bStatNum}>{todayRides}</Text>
+                  <Text style={styles.bStatLabel}>rides today</Text>
+                </View>
+                <View style={styles.bStatDiv} />
+                <View style={styles.bStat}>
+                  <Text style={styles.bStatNum}>{totalEarned.toFixed(0)}</Text>
+                  <Text style={styles.bStatLabel}>earned</Text>
+                </View>
+                <View style={styles.bStatDiv} />
+                <View style={styles.bStat}>
+                  <Text style={styles.bStatNum}>{totalCommission.toFixed(0)}</Text>
+                  <Text style={styles.bStatLabel}>commission</Text>
+                </View>
               </View>
-              <Text style={[styles.txnAmount, item.amount > 0 ? styles.txnPositive : styles.txnNegative]}>
-                {item.amount > 0 ? "+" : ""}{item.amount.toFixed(2)} DH
-              </Text>
             </View>
-          )}
-        />
-      )}
+            {/* Filters */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
+              {TIME_FILTERS.map((f) => (
+                <Pressable key={f} onPress={() => setTimeFilter(f)} style={[styles.chip, timeFilter === f && styles.chipOn]}>
+                  <Text style={[styles.chipText, timeFilter === f && styles.chipTextOn]}>{f}</Text>
+                </Pressable>
+              ))}
+              <View style={styles.chipSep} />
+              {TYPE_FILTERS.map((f) => (
+                <Pressable key={f} onPress={() => setTypeFilter(f)} style={[styles.chip, typeFilter === f && styles.chipOn]}>
+                  <Text style={[styles.chipText, typeFilter === f && styles.chipTextOn]}>{f}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            {filtered.length > 0 && <Text style={styles.txnCount}>{filtered.length} transaction{filtered.length !== 1 ? "s" : ""}</Text>}
+          </>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name="receipt-outline" size={24} color={colors.textMuted} />
+            <Text style={styles.emptyText}>{transactions.length === 0 ? "No transactions yet" : "No matches"}</Text>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <View style={styles.txnCard}>
+            <View style={[styles.txnIconWrap, { backgroundColor: txnColor(item.amount) + "12" }]}>
+              <Ionicons name={txnIcon(item.type)} size={18} color={txnColor(item.amount)} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.txnType}>{txnLabel(item.type)}</Text>
+              <Text style={styles.txnDate}>{formatDate(item.created_at)}</Text>
+              {item.reference_code ? <Text style={styles.txnRef} numberOfLines={1}>{item.reference_code}</Text> : null}
+            </View>
+            <Text style={[styles.txnAmt, { color: txnColor(item.amount) }]}>
+              {item.amount > 0 ? "+" : ""}{item.amount.toFixed(2)}
+            </Text>
+          </View>
+        )}
+      />
 
       {/* Topup Modal */}
       <Modal visible={showTopup} animationType="slide" transparent>
@@ -274,69 +273,45 @@ export default function EarningsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: "#fafafa" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  // Balance
   balanceCard: {
-    backgroundColor: colors.primary,
-    margin: spacing.md,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    alignItems: "center",
+    backgroundColor: colors.primary, margin: spacing.md,
+    borderRadius: radius.lg, padding: spacing.lg,
   },
+  balanceTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   balanceLabel: { fontSize: 13, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: 0.5 },
-  balanceAmount: { fontSize: 40, fontWeight: "800", color: colors.white, marginTop: spacing.xs },
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: spacing.md,
-    marginBottom: spacing.md,
+  topupBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: radius.full, paddingVertical: 6, paddingHorizontal: 14 },
+  topupBtnText: { color: colors.white, fontSize: 13, fontWeight: "600" },
+  balanceAmount: { fontSize: 38, fontWeight: "800", color: colors.white, marginTop: spacing.xs },
+  balanceStats: { flexDirection: "row", alignItems: "center", marginTop: spacing.md },
+  bStat: { flex: 1, alignItems: "center" },
+  bStatNum: { fontSize: 17, fontWeight: "700", color: colors.white },
+  bStatLabel: { fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 1, textTransform: "uppercase", letterSpacing: 0.3 },
+  bStatDiv: { width: 1, height: 22, backgroundColor: "rgba(255,255,255,0.15)" },
+  // Filters
+  filterRow: { paddingHorizontal: spacing.md, marginBottom: spacing.sm },
+  chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: radius.full, backgroundColor: colors.white, marginRight: 6, borderWidth: 1, borderColor: colors.border },
+  chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 13, fontWeight: "600", color: colors.textSecondary },
+  chipTextOn: { color: colors.white },
+  chipSep: { width: 1, height: 20, backgroundColor: colors.border, marginRight: 6, alignSelf: "center" },
+  txnCount: { fontSize: 12, color: colors.textMuted, paddingHorizontal: spacing.md, marginBottom: spacing.sm },
+  emptyState: { alignItems: "center", paddingVertical: spacing.xl, gap: spacing.sm },
+  emptyText: { fontSize: 14, color: colors.textMuted },
+  // Transaction card
+  txnCard: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    backgroundColor: colors.white, marginHorizontal: spacing.md, marginBottom: spacing.xs,
+    borderRadius: radius.md, padding: spacing.md,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 3, elevation: 1,
   },
-  miniStat: { alignItems: "center", paddingHorizontal: spacing.lg },
-  miniStatValue: { fontSize: 18, fontWeight: "700", color: colors.white },
-  miniStatLabel: { fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 2 },
-  miniStatDivider: { width: 1, height: 24, backgroundColor: "rgba(255,255,255,0.2)" },
-  topupButton: {
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: radius.full,
-    paddingVertical: 10,
-    paddingHorizontal: 28,
-  },
-  topupButtonText: { color: colors.white, fontSize: 14, fontWeight: "600" },
-  filterScroll: { paddingHorizontal: spacing.md, marginBottom: spacing.md },
-  filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.full, backgroundColor: colors.surface, marginRight: spacing.sm },
-  filterChipActive: { backgroundColor: colors.primary },
-  filterChipText: { fontSize: 13, fontWeight: "600", color: colors.textSecondary },
-  filterChipTextActive: { color: colors.white },
-  filterDivider: { width: 1, height: 24, backgroundColor: colors.border, marginRight: spacing.sm, alignSelf: "center" },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.text,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  emptyState: { flex: 1, justifyContent: "center", alignItems: "center", gap: spacing.sm },
-  emptyText: { fontSize: 15, color: colors.textMuted },
-  txnRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 4,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  txnIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
-  txnIconEarned: { backgroundColor: "#dbeafe" },
-  txnIconTopup: { backgroundColor: "#dcfce7" },
-  txnIconFee: { backgroundColor: "#fee2e2" },
-  txnIconText: { fontSize: 18, fontWeight: "700" },
-  txnType: { fontSize: 15, fontWeight: "600", color: colors.text },
+  txnIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
+  txnType: { fontSize: 14, fontWeight: "600", color: colors.text },
   txnDate: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
   txnRef: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  txnAmount: { fontSize: 16, fontWeight: "700" },
-  txnPositive: { color: colors.success },
-  txnNegative: { color: colors.danger },
+  txnAmt: { fontSize: 16, fontWeight: "800" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalContent: {
     backgroundColor: colors.white,
