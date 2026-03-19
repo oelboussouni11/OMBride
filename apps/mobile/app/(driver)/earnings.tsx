@@ -10,8 +10,10 @@ import {
   Alert,
   Modal,
   ScrollView,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as ImagePicker from "expo-image-picker";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { fetchCredits, fetchMe, requestTopup, type CreditTransaction } from "../../services/api";
 import { colors, spacing, radius } from "../../constants/theme";
@@ -33,6 +35,7 @@ export default function EarningsScreen() {
   const [topupAmount, setTopupAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
   const [referenceCode, setReferenceCode] = useState("");
+  const [receiptImage, setReceiptImage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -74,14 +77,47 @@ export default function EarningsScreen() {
     .filter((t) => t.type === "ride_fee")
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
+  async function pickReceiptImage() {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Photo library access is required.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets[0]) {
+        setReceiptImage(result.assets[0].uri);
+      }
+    } catch {
+      // Fallback for web — use file input
+      if (typeof document !== "undefined") {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.onchange = (e: any) => {
+          const file = e.target?.files?.[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = () => setReceiptImage(reader.result as string);
+            reader.readAsDataURL(file);
+          }
+        };
+        input.click();
+      }
+    }
+  }
+
   async function handleTopup() {
     const amount = parseFloat(topupAmount);
     if (!amount || amount <= 0) {
       Alert.alert("Error", "Enter a valid amount");
       return;
     }
-    if (!referenceCode.trim()) {
-      Alert.alert("Error", "Please enter your proof of payment (receipt or reference number)");
+    if (!receiptImage) {
+      Alert.alert("Error", "Please upload a photo of your receipt");
       return;
     }
     setSubmitting(true);
@@ -89,12 +125,13 @@ export default function EarningsScreen() {
       await requestTopup({
         amount,
         payment_method: paymentMethod,
-        reference_code: referenceCode.trim(),
+        reference_code: referenceCode.trim() || "Receipt photo attached",
       });
       Alert.alert("Request Sent", "Your top-up request has been submitted and will be reviewed by admin.");
       setShowTopup(false);
       setTopupAmount("");
       setReferenceCode("");
+      setReceiptImage(null);
       loadData();
     } catch (err: any) {
       Alert.alert("Error", err.message);
@@ -238,16 +275,35 @@ export default function EarningsScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Proof of Payment *</Text>
+              <Text style={styles.inputLabel}>Reference (optional)</Text>
               <TextInput
-                style={[styles.input, { minHeight: 64, textAlignVertical: "top" }]}
-                placeholder="Receipt number, transfer reference, or payment details"
+                style={styles.input}
+                placeholder="Transfer reference or note"
                 placeholderTextColor={colors.textMuted}
                 value={referenceCode}
                 onChangeText={setReferenceCode}
-                multiline
               />
-              <Text style={styles.inputHint}>Required — enter your receipt or reference number</Text>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Receipt Photo *</Text>
+              <Pressable style={styles.imagePickerBtn} onPress={pickReceiptImage}>
+                {receiptImage ? (
+                  <Image source={{ uri: receiptImage }} style={styles.receiptPreview} />
+                ) : (
+                  <View style={styles.imagePickerEmpty}>
+                    <Ionicons name="camera-outline" size={28} color={colors.textMuted} />
+                    <Text style={styles.imagePickerText}>Tap to upload receipt</Text>
+                    <Text style={styles.imagePickerHint}>Photo of your payment receipt</Text>
+                  </View>
+                )}
+              </Pressable>
+              {receiptImage && (
+                <Pressable style={styles.removeImageBtn} onPress={() => setReceiptImage(null)}>
+                  <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                  <Text style={styles.removeImageText}>Remove photo</Text>
+                </Pressable>
+              )}
             </View>
 
             <Pressable
@@ -354,6 +410,34 @@ const styles = StyleSheet.create({
   methodActive: { borderColor: colors.primary, backgroundColor: colors.surface },
   methodText: { fontSize: 14, fontWeight: "600", color: colors.textMuted },
   methodTextActive: { color: colors.text },
+  imagePickerBtn: {
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    borderRadius: radius.md,
+    overflow: "hidden",
+  },
+  imagePickerEmpty: {
+    paddingVertical: spacing.xl,
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  imagePickerText: { fontSize: 14, fontWeight: "600", color: colors.textSecondary },
+  imagePickerHint: { fontSize: 12, color: colors.textMuted },
+  receiptPreview: {
+    width: "100%",
+    height: 180,
+    resizeMode: "cover",
+  },
+  removeImageBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-end",
+    paddingVertical: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  removeImageText: { fontSize: 13, color: colors.danger, fontWeight: "500" },
   submitButton: {
     backgroundColor: colors.primary,
     borderRadius: radius.sm,
